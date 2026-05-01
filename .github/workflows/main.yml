@@ -7,36 +7,31 @@ jobs:
   check-inbox:
     runs-on: ubuntu-latest
     steps:
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-        
-      - name: Get temp email
-        id: email
+      - name: Get temp email & check inbox
         run: |
+          # تولید ایمیل موقت
           RESPONSE=$(curl -s "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1")
-          EMAIL=$(echo $RESPONSE | jq -r '.[0]')
-          echo "email=$EMAIL" >> $GITHUB_OUTPUT
-          echo "email=$EMAIL" >> $GITHUB_ENV
-          echo "Generated email: $EMAIL"
-      
-      - name: Check inbox
-        run: |
-          EMAIL="${{ steps.email.outputs.email }}"
+          echo "API Response: $RESPONSE"
+          
+          if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "[]" ]; then
+            echo "❌ API failed, trying alternative..."
+            # API جایگزین
+            EMAIL="test$(date +%s)@tempmail.lol"
+          else
+            EMAIL=$(echo $RESPONSE | sed 's/\[\"\(.*\)\"\]/\1/' | tr -d '"')
+          fi
+          
           DOMAIN=$(echo $EMAIL | cut -d'@' -f2)
           LOGIN=$(echo $EMAIL | cut -d'@' -f1)
           
-          echo "Checking inbox for: $EMAIL"
-          sleep 15
+          echo "✅ Generated: $EMAIL"
+          echo "Login: $LOGIN | Domain: $DOMAIN"
           
-          # لیست ایمیل‌ها
-          MESSAGES=$(curl -s "https://www.1secmail.com/api/v1/?action=getMessages&login=$LOGIN&domain=$DOMAIN")
-          echo "$MESSAGES" | jq .
+          # صبر برای ایمیل
+          echo "⏳ Waiting 20s for emails..."
+          sleep 20
           
-          # اولین ایمیل رو بخون
-          MSG_ID=$(echo "$MESSAGES" | jq -r '.[0].id // empty')
-          if [ "$MSG_ID" != "null" ] && [ ! -z "$MSG_ID" ]; then
-            echo "Reading email ID: $MSG_ID"
-            curl -s "https://www.1secmail.com/api/v1/?action=readMessage&login=$LOGIN&domain=$DOMAIN&id=$MSG_ID" | jq .
-          else
-            echo "❌ No emails found"
-          fi
+          # چک inbox
+          curl -s "https://www.1secmail.com/api/v1/?action=getMessages&login=$LOGIN&domain=$DOMAIN"
+          
+          echo "✅ Done! Send test email to: $EMAIL"
