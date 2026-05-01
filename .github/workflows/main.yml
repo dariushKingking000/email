@@ -1,43 +1,22 @@
-name: ✅ PERFECT EMAIL CHECKER (بدون خطا)
-
-on:
-  workflow_dispatch:
-    inputs:
-      custom_name:
-        description: 'نام (اختیاری)'
-        default: 'ghaction'
-        required: false
+# .github/workflows/B-send-numbers.yml
+name: B - بفرست ۶ رقمی
+on: [workflow_dispatch]
 
 jobs:
-  email-check:
+  send:
     runs-on: ubuntu-latest
     steps:
-      - name: 🎯 ایمیل + صندوق کامل (100% کار می‌کند)
-        run: |
-          # سرویس sharklasers.com از temp-mail.org
-          RAND=$(shuf -i 10000-99999 -n 1)
-          NAME="${{ github.event.inputs.custom_name || 'test' }}$RAND"
-          EMAIL="$NAME@sharklasers.com"
-          
-          echo ""
-          echo "✅ **ایمیل ثابت:** $EMAIL"
-          echo "🔗 **لینک صندوق:** https://temp-mail.org/en/#$NAME"
-          echo ""
-          
-          echo "⏳ 30s انتظار..."
-          sleep 30
-          
-          echo "🔍 چک inbox:"
-          # فقط نمایش ایمیل و لینک (بدون curl پیچیده)
-          echo "📋 کپی کنید: $EMAIL"
-          echo "🌐 باز کنید: https://temp-mail.org/en/#$NAME"
-          
-          # تست ارسال ساده
-          echo "📤 تست ارسال..."
-          curl -s -m 10 "https://httpbin.org/post" \
-            -d "to=$EMAIL&subject=Test&body=سلام از GitHub" > /dev/null
-          
-          echo ""
-          echo "🎉 **آماده استفاده!**"
-          echo "**ایمیل:** $EMAIL"
-          echo "**صندوق:** https://temp-mail.org/en/#$NAME"
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: بفرست اعداد
+      run: |
+        echo "123456" > numbers.txt  # ❌ اعداد خودت رو عوض کن
+        git config user.name "B-Bot"
+        git config user.email "bot@github.com"
+        git add numbers.txt
+        git commit -m "🔑 اعداد ۶ رقمی برای A"
+        git push
+        
+        echo "✅ اعداد فرستاده شد! A رو Run کن"
