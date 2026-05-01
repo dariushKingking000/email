@@ -1,37 +1,30 @@
-name: Check Temp Mail Inbox
+name: Simple Temp Mail Checker
 
 on:
   workflow_dispatch:
+    inputs:
+      email:
+        description: 'Enter temp email'
+        required: false
+        default: ''
 
 jobs:
-  check-inbox:
+  check:
     runs-on: ubuntu-latest
     steps:
-      - name: Get temp email & check inbox
+      - name: Check Inbox
         run: |
-          # تولید ایمیل موقت
-          RESPONSE=$(curl -s "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1")
-          echo "API Response: $RESPONSE"
-          
-          if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "[]" ]; then
-            echo "❌ API failed, trying alternative..."
-            # API جایگزین
-            EMAIL="test$(date +%s)@tempmail.lol"
-          else
-            EMAIL=$(echo $RESPONSE | sed 's/\[\"\(.*\)\"\]/\1/' | tr -d '"')
+          if [ -z "${{ github.event.inputs.email }}" ]; then
+            echo "📧 First get email from: https://temp-mail.org/en/"
+            echo "🔄 Then re-run & paste email here"
+            exit 0
           fi
           
+          EMAIL="${{ github.event.inputs.email }}"
           DOMAIN=$(echo $EMAIL | cut -d'@' -f2)
           LOGIN=$(echo $EMAIL | cut -d'@' -f1)
           
-          echo "✅ Generated: $EMAIL"
-          echo "Login: $LOGIN | Domain: $DOMAIN"
+          echo "Checking: $EMAIL"
+          sleep 10
           
-          # صبر برای ایمیل
-          echo "⏳ Waiting 20s for emails..."
-          sleep 20
-          
-          # چک inbox
-          curl -s "https://www.1secmail.com/api/v1/?action=getMessages&login=$LOGIN&domain=$DOMAIN"
-          
-          echo "✅ Done! Send test email to: $EMAIL"
+          curl -s "https://www.1secmail.com/api/v1/?action=getMessages&login=$LOGIN&domain=$DOMAIN" || echo "[]"
