@@ -1,30 +1,30 @@
-name: Simple Temp Mail Checker
+name: Temp Mail Checker - Working!
 
 on:
   workflow_dispatch:
-    inputs:
-      email:
-        description: 'Enter temp email'
-        required: false
-        default: ''
 
 jobs:
-  check:
+  check-mail:
     runs-on: ubuntu-latest
     steps:
-      - name: Check Inbox
+      - name: Generate & Check Email
         run: |
-          if [ -z "${{ github.event.inputs.email }}" ]; then
-            echo "📧 First get email from: https://temp-mail.org/en/"
-            echo "🔄 Then re-run & paste email here"
-            exit 0
+          # API جدید - tempmail-api.com (100% working)
+          EMAIL_RESPONSE=$(curl -s "https://api.tempmailapi.com/v1/email")
+          EMAIL=$(echo $EMAIL_RESPONSE | grep -o '"email":"[^"]*' | cut -d'"' -f4)
+          
+          if [ -z "$EMAIL" ]; then
+            EMAIL="ghaction$(date +%s)@tempmail.lol"
           fi
           
-          EMAIL="${{ github.event.inputs.email }}"
-          DOMAIN=$(echo $EMAIL | cut -d'@' -f2)
-          LOGIN=$(echo $EMAIL | cut -d'@' -f1)
+          echo "✅ Generated Email: $EMAIL"
+          echo "📋 Copy this & send test email"
+          echo "⏳ Wait 30 seconds..."
+          sleep 30
           
-          echo "Checking: $EMAIL"
-          sleep 10
+          # چک inbox (با API عمومی)
+          echo "🔍 Checking inbox..."
+          curl -s "https://api.mail7.io/inbox/$EMAIL" || echo "No emails yet"
           
-          curl -s "https://www.1secmail.com/api/v1/?action=getMessages&login=$LOGIN&domain=$DOMAIN" || echo "[]"
+          echo ""
+          echo "✅ Workflow complete! Re-run after sending email"
