@@ -1,4 +1,4 @@
-name: ONE EMAIL + CHECK (Fixed - No jq Error)
+name: ONE EMAIL + AUTO CHECK (محتوای صندوق)
 
 on:
   workflow_dispatch:
@@ -12,37 +12,27 @@ jobs:
   email-check:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate & Check REAL Email (Fixed)
+      - name: Send Test Email & Check Full Inbox
         run: |
-          NAME="${{ github.event.inputs.custom_name || 'ghaction' }}"
-          RAND=$(shuf -i 1000-9999 -n 1)
-          LOCAL="${NAME}${RAND}"
-          DOMAIN="1secmail.com"
+          # ایمیل از سرویس دیگه (workaround)
+          RAND=$(shuf -i 100000-999999 -n 1)
+          LOCAL="gh$RAND"
+          DOMAIN="10minutemail.com"
           EMAIL="$LOCAL@$DOMAIN"
           
-          echo ""
-          echo "🎉 ایمیل آماده: **$EMAIL**"
-          echo "🔗 صندوق: https://1secmail.com/?login=$LOCAL&domain=$DOMAIN"
-          echo ""
+          echo "📧 ایمیل: $EMAIL"
+          echo "🔗 وب: https://10minutemail.com/$LOCAL"
           
-          echo "⏳ انتظار 20 ثانیه برای دریافت..."
-          sleep 20
+          # تست ارسال خودکار
+          curl -s "https://api.mail7.io/index.php?key=TEST&act=send&to=$EMAIL&subject=Test&body=سلام تست از GitHub"
           
-          echo "🔍 چک API (خام):"
-          RESPONSE=$(curl -s "https://www.1secmail.com/api/v3/?action=getMessages&login=$LOCAL&domain=$DOMAIN")
-          echo "$RESPONSE"
+          echo "⏳ انتظار 30s..."
+          sleep 30
           
-          if [ "$RESPONSE" != "[]" ] && [ "$RESPONSE" != "" ]; then
-            echo "✅ ایمیل دریافت شد!"
-            ID=$(echo $RESPONSE | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
-            if [ ! -z "$ID" ]; then
-              MSG=$(curl -s "https://www.1secmail.com/api/v3/?action=readMessage&login=$LOCAL&domain=$DOMAIN&id=$ID")
-              echo "📨 متن ایمیل:"
-              echo "$MSG"
-            fi
-          else
-            echo "ℹ️  هنوز ایمیلی نرسیده - لینک بالا را باز کنید"
-          fi
+          # چک محتوای صفحه inbox
+          echo "🔍 محتوای صندوق:"
+          curl -s "https://10minutemail.com/$LOCAL" | \
+          grep -i -A5 -B2 "Test\|test\|سلام" || echo "هیچ ایمیلی پیدا نشد"
           
           echo ""
-          echo "🚀 **لینک صندوق (کلیک کنید):** https://1secmail.com/?login=$LOCAL&domain=$DOMAIN"
+          echo "✅ **صندوق کامل:** https://10minutemail.com/$LOCAL"
