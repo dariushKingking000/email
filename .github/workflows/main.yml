@@ -1,31 +1,22 @@
-name: 🔥 Temp Mail - NO ERROR!
+name: ONE EMAIL + CHECK
 
 on:
   workflow_dispatch:
 
 jobs:
-  temp-mail:
+  email-check:
     runs-on: ubuntu-latest
     steps:
-      - name: 🎯 Generate Temp Emails
+      - name: Generate & Check SINGLE Email
         run: |
-          # تولید ایمیل‌های موقت معتبر
-          TIMESTAMP=$(date +%s)
-          echo "📧 TEMPORARY EMAILS (Copy & Use):"
-          echo ""
-          echo "1️⃣  ${TIMESTAMP}@guerrillamail.com"
-          echo "2️⃣  test${TIMESTAMP}@tempmail.lol"  
-          echo "3️⃣  ${TIMESTAMP}@10minutemail.com"
-          echo ""
-          echo "✅ PICK ONE → Send test email → Check inbox manually"
-          echo ""
-          echo "🔗 Check inboxes:"
-          echo "• https://www.guerrillamail.com/"
-          echo "• https://temp-mail.org/"
+          # یک ایمیل ساده
+          EMAIL="ghaction$(date +%s)@dropmail.me"
           
-      - name: 🔍 Check Example (GuerrillaMail API)
-        run: |
-          echo "🧪 Testing GuerrillaMail API..."
-          curl -s "https://api.guerrillamail.com/ajax.php?f=get_email_address" | grep -o '"email_addr":"[^"]*' || echo "✅ API ready"
-          echo ""
-          echo "🎉 ALL SET! Use generated emails above"
+          echo "📧 EMAIL: $EMAIL"
+          echo "⏳ Wait 20s..."
+          sleep 20
+          
+          echo "🔍 Inbox check:"
+          curl -s "https://www.dropmail.me/api/v1/info?add=$EMAIL" || echo "No emails"
+          
+          echo "✅ $EMAIL - Check: https://www.dropmail.me"
