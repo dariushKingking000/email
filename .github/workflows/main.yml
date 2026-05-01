@@ -1,10 +1,10 @@
-name: ONE EMAIL + CHECK (Fixed Working)
+name: ONE EMAIL + CHECK (Fixed - No jq Error)
 
 on:
   workflow_dispatch:
     inputs:
       custom_name:
-        description: 'نام دلخواه (اختیاری)'
+        description: 'نام دلخواه'
         required: false
         default: 'test'
 
@@ -12,21 +12,37 @@ jobs:
   email-check:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate & Check REAL Working Email
+      - name: Generate & Check REAL Email (Fixed)
         run: |
-          # ایمیل موقت از 1secmail (100% کار می‌کند)
           NAME="${{ github.event.inputs.custom_name || 'ghaction' }}"
           RAND=$(shuf -i 1000-9999 -n 1)
-          EMAIL="$NAME$RAND@1secmail.com"
+          LOCAL="${NAME}${RAND}"
+          DOMAIN="1secmail.com"
+          EMAIL="$LOCAL@$DOMAIN"
           
-          echo "📧 ایمیل تولید شده: $EMAIL"
-          echo "🔗 وب‌سایت چک: https://1secmail.com"
+          echo ""
+          echo "🎉 ایمیل آماده: **$EMAIL**"
+          echo "🔗 صندوق: https://1secmail.com/?login=$LOCAL&domain=$DOMAIN"
+          echo ""
           
-          echo "⏳ انتظار 15 ثانیه..."
-          sleep 15
+          echo "⏳ انتظار 20 ثانیه برای دریافت..."
+          sleep 20
           
-          echo "🔍 چک کردن صندوق..."
-          curl -s "https://www.1secmail.com/api/v3/?action=getMessages&login=${EMAIL%@*}&domain=${EMAIL#*@}" | jq .
+          echo "🔍 چک API (خام):"
+          RESPONSE=$(curl -s "https://www.1secmail.com/api/v3/?action=getMessages&login=$LOCAL&domain=$DOMAIN")
+          echo "$RESPONSE"
           
-          echo "✅ لینک مستقیم صندوق: https://1secmail.com/?login=${EMAIL%@*}&domain=${EMAIL#*@}"
-          echo "💡 ایمیل را در لینک بالا چک کنید"
+          if [ "$RESPONSE" != "[]" ] && [ "$RESPONSE" != "" ]; then
+            echo "✅ ایمیل دریافت شد!"
+            ID=$(echo $RESPONSE | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+            if [ ! -z "$ID" ]; then
+              MSG=$(curl -s "https://www.1secmail.com/api/v3/?action=readMessage&login=$LOCAL&domain=$DOMAIN&id=$ID")
+              echo "📨 متن ایمیل:"
+              echo "$MSG"
+            fi
+          else
+            echo "ℹ️  هنوز ایمیلی نرسیده - لینک بالا را باز کنید"
+          fi
+          
+          echo ""
+          echo "🚀 **لینک صندوق (کلیک کنید):** https://1secmail.com/?login=$LOCAL&domain=$DOMAIN"
