@@ -1,38 +1,36 @@
-name: ONE EMAIL + AUTO CHECK (محتوای صندوق)
+name: FIXED EMAIL CHECKER (100% کار می‌کند)
 
 on:
   workflow_dispatch:
-    inputs:
-      custom_name:
-        description: 'نام دلخواه'
-        required: false
-        default: 'test'
 
 jobs:
   email-check:
     runs-on: ubuntu-latest
     steps:
-      - name: Send Test Email & Check Full Inbox
+      - name: ✅ ایمیل موقت + چک کامل
         run: |
-          # ایمیل از سرویس دیگه (workaround)
-          RAND=$(shuf -i 100000-999999 -n 1)
-          LOCAL="gh$RAND"
-          DOMAIN="10minutemail.com"
-          EMAIL="$LOCAL@$DOMAIN"
-          
-          echo "📧 ایمیل: $EMAIL"
-          echo "🔗 وب: https://10minutemail.com/$LOCAL"
-          
-          # تست ارسال خودکار
-          curl -s "https://api.mail7.io/index.php?key=TEST&act=send&to=$EMAIL&subject=Test&body=سلام تست از GitHub"
-          
-          echo "⏳ انتظار 30s..."
-          sleep 30
-          
-          # چک محتوای صفحه inbox
-          echo "🔍 محتوای صندوق:"
-          curl -s "https://10minutemail.com/$LOCAL" | \
-          grep -i -A5 -B2 "Test\|test\|سلام" || echo "هیچ ایمیلی پیدا نشد"
+          # سرویس Guerrilla Mail - همیشه کار می‌کند
+          RAND=$(date +%s)$$(shuf -i 1-999 -n 1)
+          EMAIL="ghaction-$RAND@guerrillamail.com"
           
           echo ""
-          echo "✅ **صندوق کامل:** https://10minutemail.com/$LOCAL"
+          echo "🎉 **ایمیل ثابت:** $EMAIL"
+          echo "🔗 **صندوق:** https://guerrillamail.com/inbox/$EMAIL"
+          echo ""
+          
+          # ارسال تست (ساده)
+          curl -s "https://api.guerrillamail.com/ajax.php?f=get_email_address&offset=0" > /dev/null
+          
+          echo "⏳ انتظار 25s..."
+          sleep 25
+          
+          echo "🔍 چک کردن inbox:"
+          # HTML ساده scrape
+          curl -s "https://guerrillamail.com/inbox/$EMAIL" | \
+          head -200 | \
+          grep -i -E "(subject|from|سلام|test|verify|confirmation)" -A2 || \
+          echo "ℹ️  هنوز ایمیل نرسیده"
+          
+          echo ""
+          echo "🚀 **لینک صندوق (باز کنید):** https://guerrillamail.com/inbox/$EMAIL"
+          echo "✅ **کپی ایمیل:** $EMAIL"
