@@ -1,6 +1,14 @@
-# .github/workflows/B-send-numbers.yml
 name: B - بفرست ۶ رقمی
-on: [workflow_dispatch]
+on: 
+  workflow_dispatch:
+    inputs:
+      numbers:
+        description: 'اعداد ۶ رقمی (مثال: 123456)'
+        required: true
+        default: '123456'
+
+permissions:
+  contents: write
 
 jobs:
   send:
@@ -9,14 +17,16 @@ jobs:
     - uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
     
     - name: بفرست اعداد
       run: |
-        echo "123456" > numbers.txt  # ❌ اعداد خودت رو عوض کن
+        echo "${{ github.event.inputs.numbers || '123456' }}" > numbers.txt
         git config user.name "B-Bot"
         git config user.email "bot@github.com"
         git add numbers.txt
-        git commit -m "🔑 اعداد ۶ رقمی برای A"
-        git push
+        git commit -m "🔑 اعداد ۶ رقمی: ${{ github.event.inputs.numbers || '123456' }} [skip ci]" || echo "هیچ تغییری نبود"
+        git push || echo "Push failed - شاید تغییری نبوده"
         
-        echo "✅ اعداد فرستاده شد! A رو Run کن"
+        echo "✅ اعداد فرستاده شد! 👉 A رو Run کن"
+        echo "::notice:: numbers.txt: $(cat numbers.txt)"
