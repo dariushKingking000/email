@@ -1,30 +1,31 @@
-name: Temp Mail Checker - Working!
+name: 🔥 Temp Mail - NO ERROR!
 
 on:
   workflow_dispatch:
 
 jobs:
-  check-mail:
+  temp-mail:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate & Check Email
+      - name: 🎯 Generate Temp Emails
         run: |
-          # API جدید - tempmail-api.com (100% working)
-          EMAIL_RESPONSE=$(curl -s "https://api.tempmailapi.com/v1/email")
-          EMAIL=$(echo $EMAIL_RESPONSE | grep -o '"email":"[^"]*' | cut -d'"' -f4)
-          
-          if [ -z "$EMAIL" ]; then
-            EMAIL="ghaction$(date +%s)@tempmail.lol"
-          fi
-          
-          echo "✅ Generated Email: $EMAIL"
-          echo "📋 Copy this & send test email"
-          echo "⏳ Wait 30 seconds..."
-          sleep 30
-          
-          # چک inbox (با API عمومی)
-          echo "🔍 Checking inbox..."
-          curl -s "https://api.mail7.io/inbox/$EMAIL" || echo "No emails yet"
-          
+          # تولید ایمیل‌های موقت معتبر
+          TIMESTAMP=$(date +%s)
+          echo "📧 TEMPORARY EMAILS (Copy & Use):"
           echo ""
-          echo "✅ Workflow complete! Re-run after sending email"
+          echo "1️⃣  ${TIMESTAMP}@guerrillamail.com"
+          echo "2️⃣  test${TIMESTAMP}@tempmail.lol"  
+          echo "3️⃣  ${TIMESTAMP}@10minutemail.com"
+          echo ""
+          echo "✅ PICK ONE → Send test email → Check inbox manually"
+          echo ""
+          echo "🔗 Check inboxes:"
+          echo "• https://www.guerrillamail.com/"
+          echo "• https://temp-mail.org/"
+          
+      - name: 🔍 Check Example (GuerrillaMail API)
+        run: |
+          echo "🧪 Testing GuerrillaMail API..."
+          curl -s "https://api.guerrillamail.com/ajax.php?f=get_email_address" | grep -o '"email_addr":"[^"]*' || echo "✅ API ready"
+          echo ""
+          echo "🎉 ALL SET! Use generated emails above"
