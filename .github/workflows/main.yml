@@ -1,4 +1,4 @@
-name: Screenshot & Auto-Upload (Dynamic URL)
+name: Screenshot & Auto-Upload (Smart)
 on: [push]
 permissions:
   contents: write
@@ -12,7 +12,19 @@ jobs:
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: 📸 Screenshot from command.txt
+    - name: 📄 اول command.txt رو بخون
+      id: read-cmd
+      run: |
+        if [ -f "command.txt" ]; then
+          CONTENT=$(cat command.txt | head -1 | xargs)
+          echo "content=$CONTENT" >> $GITHUB_OUTPUT
+          echo "✅ command.txt: '$CONTENT'"
+        else
+          echo "content=" >> $GITHUB_OUTPUT
+          echo "❌ command.txt نیست"
+        fi
+    
+    - name: 📸 Screenshot + Base64
       run: |
         npm init -y
         npm i puppeteer
@@ -20,62 +32,61 @@ jobs:
         cat > screenshot.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
+        const process = require('process');
+        
+        let url = 'https://chatgpt.com';
+        
+        // از command.txt یا environment
+        const cmdContent = process.env.CMD_CONTENT || '';
+        if (cmdContent) {
+          url = cmdContent.startsWith('http') ? cmdContent : `https://${cmdContent}`;
+          console.log(`🔗 از command.txt: ${url}`);
+        }
+        
+        console.log(`📸 میره: ${url}`);
+        
+        fs.writeFileSync('config.json', JSON.stringify({url, timestamp: new Date().toISOString()}, null, 2));
         
         (async () => {
-          let url = 'https://chatgpt.com';
-          
-          // هر چی توی command.txt هست رو URL کن
-          try {
-            if (fs.existsSync('command.txt')) {
-              const content = fs.readFileSync('command.txt', 'utf8').trim();
-              if (content) {
-                url = content.startsWith('http') ? content : `https://${content}`;
-                console.log(`🔗 URL از command.txt: ${url}`);
-              }
-            }
-          } catch(e) {
-            console.log('❌ command.txt error:', e.message);
-          }
-          
-          console.log(`📸 Screenshot از: ${url}`);
-          
           const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
           await page.setViewport({width: 1920, height: 1080});
-          await page.goto(url, {waitUntil: 'networkidle2', timeout: 15000});
+          await page.goto(url, {waitUntil: 'networkidle2', timeout: 30000});
           await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
           
           const base64Image = fs.readFileSync('screenshot.png').toString('base64');
           fs.writeFileSync('screenshot-base64.txt', base64Image);
-          fs.writeFileSync('screenshot.png', fs.readFileSync('screenshot.png'));
-          
           console.log('📏 Size:', base64Image.length);
-          console.log('✅ تمام!');
-        })();
+          console.log('✅ آماده!');
+        })().catch(e => {
+          console.error('❌ خطا:', e.message);
+          process.exit(1);
+        });
         EOF
         
         node screenshot.js
     
-    - name: 🚀 Upload Files
+    - name: 🚀 Auto Upload & Get Raw Link
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CMD_CONTENT: ${{ steps.read-cmd.outputs.content }}
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot.png screenshot-base64.txt *.txt
+        git add screenshot* config.json *.txt
         git commit -m "📸 [$(date +%Y%m%d-%H%M)]"
         git push
         
         SHA=$(git rev-parse --short HEAD)
-        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${SHA}/screenshot-base64.txt"
-        echo "🔗 $RAW_URL" > raw_url.txt
+        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${{ github.sha }}/screenshot-base64.txt"
+        echo "$RAW_URL" > raw_url.txt
         echo "✅ $RAW_URL"
     
     - name: ⏳ Wait 5 Minutes
       run: sleep 300
     
-    - name: 📝 Final Update
+    - name: Final Commit
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
