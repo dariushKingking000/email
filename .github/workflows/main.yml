@@ -1,4 +1,4 @@
-name: Screenshot & Auto-Upload (Fixed)
+name: Screenshot & Auto-Upload (Dynamic URL)
 on: [push]
 permissions:
   contents: write
@@ -9,82 +9,77 @@ jobs:
     timeout-minutes: 35
     steps:
     - uses: actions/checkout@v4
-      with:
-        ref: ${{ github.ref }}
-        fetch-depth: 0
     
-    - name: Install Chrome & deps
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y wget gnupg google-chrome-stable
+    - uses: browser-actions/setup-chrome@v1
     
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    
-    - name: Install Puppeteer
+    - name: 📸 Screenshot from command.txt
       run: |
         npm init -y
         npm i puppeteer
-    
-    - name: 🔍 Check command.txt 30x + Screenshot
-      run: |
+        
         cat > screenshot.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
         
-        (async (url) => {
-          console.log(`📸 ${url}`);
-          const browser = await puppeteer.launch({
-            headless: 'new',
-            args: ['--no-sandbox', '--disable-dev-shm-usage']
-          });
+        (async () => {
+          let url = 'https://chatgpt.com';
+          
+          // هر چی توی command.txt هست رو URL کن
+          try {
+            if (fs.existsSync('command.txt')) {
+              const content = fs.readFileSync('command.txt', 'utf8').trim();
+              if (content) {
+                url = content.startsWith('http') ? content : `https://${content}`;
+                console.log(`🔗 URL از command.txt: ${url}`);
+              }
+            }
+          } catch(e) {
+            console.log('❌ command.txt error:', e.message);
+          }
+          
+          console.log(`📸 Screenshot از: ${url}`);
+          
+          const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
           await page.setViewport({width: 1920, height: 1080});
-          await page.goto(url, {waitUntil: 'networkidle2', timeout: 30000});
+          await page.goto(url, {waitUntil: 'networkidle2', timeout: 15000});
           await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
           
-          const base64 = fs.readFileSync('screenshot.png').toString('base64');
-          fs.writeFileSync('screenshot-base64.txt', base64);
-          console.log(`✅ Size: ${base64.length}`);
-        })(process.argv[1] || 'https://chatgpt.com');
+          const base64Image = fs.readFileSync('screenshot.png').toString('base64');
+          fs.writeFileSync('screenshot-base64.txt', base64Image);
+          fs.writeFileSync('screenshot.png', fs.readFileSync('screenshot.png'));
+          
+          console.log('📏 Size:', base64Image.length);
+          console.log('✅ تمام!');
+        })();
         EOF
         
-        FOUND=0
-        for i in {1..30}; do
-          echo "🔍 $i/30 ($(date +%H:%M:%S))"
-          
-          git fetch origin ${{ github.ref_name }}
-          git reset --hard origin/${{ github.ref_name }}
-          
-          ls -la *.txt
-          
-          if [ -f "command.txt" ]; then
-            URL=$(cat command.txt | head -1 | xargs)
-            echo "✅ URL: $URL"
-            if [[ "$URL" =~ ^https ]]; then
-              node screenshot.js "$URL"
-              FOUND=1
-              break
-            fi
-          fi
-          
-          sleep 60
-        done
-        
-        [ $FOUND -eq 0 ] && node screenshot.js
+        node screenshot.js
     
-    - name: 🚀 Upload
+    - name: 🚀 Upload Files
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot* *.png *.txt
-        git commit -m "📸 $(date +%Y%m%d_%H%M)" || true
-        git push origin HEAD:${{ github.ref_name }}
+        git add screenshot.png screenshot-base64.txt *.txt
+        git commit -m "📸 [$(date +%Y%m%d-%H%M)]"
+        git push
         
         SHA=$(git rev-parse --short HEAD)
         RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${SHA}/screenshot-base64.txt"
-        echo "$RAW_URL" > raw_url.txt
+        echo "🔗 $RAW_URL" > raw_url.txt
         echo "✅ $RAW_URL"
+    
+    - name: ⏳ Wait 5 Minutes
+      run: sleep 300
+    
+    - name: 📝 Final Update
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        echo "$(date): $(cat raw_url.txt)" >> history.txt
+        git add raw_url.txt history.txt
+        git commit -m "⏰ Final [skip ci]" || true
+        git push || true
