@@ -1,10 +1,9 @@
-# .github/workflows/main.yml
 name: ChatGPT Screenshot Monitor
 
 on:
-  workflow_dispatch:  # دستی اجرا کن
+  workflow_dispatch:
   schedule:
-    - cron: '*/30 * * * *'  # هر 30 دقیقه
+    - cron: '*/30 * * * *'
 
 jobs:
   screenshot:
@@ -39,11 +38,9 @@ jobs:
           await page.goto('https://chatgpt.com');
           await page.waitForTimeout(5000);
           
-          // Base64 برای log
           const screenshot = await page.screenshot({ encoding: 'base64' });
-          console.log(🎥 CHATGPT_SCREENSHOT_BASE64: ${screenshot});
+          console.log('🎥 CHATGPT_SCREENSHOT_BASE64: ' + screenshot.substring(0, 100) + '...');
           
-          // ذخیره فایل
           await page.screenshot({ path: 'chatgpt.png' });
           console.log('✅ Screenshot saved: chatgpt.png');
           
@@ -59,8 +56,3 @@ jobs:
         name: chatgpt-screenshots
         path: chatgpt.png
         retention-days: 7
-    
-    - name: Update README with latest screenshot
-      run: |
-        echo "## Latest ChatGPT Screenshot" >> $GITHUB_STEP_SUMMARY
-        echo "![ChatGPT](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)" >> $GITHUB_STEP_SUMMARY
