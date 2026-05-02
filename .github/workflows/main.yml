@@ -1,4 +1,4 @@
-name: Screenshot & Auto-Upload with Commands
+name: Screenshot & Auto-Upload
 on: [push]
 permissions:
   contents: write
@@ -12,54 +12,24 @@ jobs:
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: Command Loop + Screenshot
+    - name: Screenshot + Base64
       run: |
         npm init -y
         npm i puppeteer
-        
-        cat > bot.js << 'EOF'
+        cat > screenshot.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
         
-        async function executeCommand(page, command) {
-          console.log(`🔧 Executing: ${command}`);
-          
-          if (command.startsWith('type ')) {
-            const text = command.slice(5).trim();
-            await page.keyboard.type(text);
-            console.log(`✅ Typed: "${text}"`);
-          } 
-          else if (command.startsWith('click ')) {
-            const [x, y] = command.slice(6).trim().split(' ').map(Number);
-            await page.mouse.click(x, y);
-            console.log(`✅ Clicked at: ${x}, ${y}`);
-          }
-          return true;
-        }
-        
-        async function takeScreenshot(page, config) {
-          await page.screenshot({path: 'screenshot.png', fullPage: true});
-          const imageBuffer = fs.readFileSync('screenshot.png');
-          const base64Image = imageBuffer.toString('base64');
-          
-          fs.writeFileSync('screenshot-base64.txt', base64Image);
-          fs.writeFileSync('screenshot.png', imageBuffer);
-          
-          console.log('📸 Screenshot ready!');
-          console.log('📏 Base64 size:', base64Image.length);
-          return base64Image;
-        }
+        const config = {
+          url: 'https://chatgpt.com',
+          width: 1920,
+          height: 1080,
+          timestamp: new Date().toISOString(),
+          maxLoops: 30
+        };
+        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
         
         (async () => {
-          const config = {
-            url: 'https://chatgpt.com',
-            width: 1920,
-            height: 1080,
-            maxLoops: 30
-          };
-          
-          fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-          
           const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
           await page.setViewport({width: config.width, height: config.height});
@@ -76,42 +46,76 @@ jobs:
               command = fs.readFileSync('command.txt', 'utf8').trim();
             }
             
-            if (command && command !== lastCommand && (command.startsWith('type ') || command.startsWith('click '))) {
-              console.log(`🎯 New command found: "${command}"`);
-              await executeCommand(page, command);
+            if (command && command !== lastCommand && 
+                (command.startsWith('type ') || command.startsWith('click '))) {
+              console.log(`🎯 Executing: ${command}`);
+              
+              if (command.startsWith('type ')) {
+                const text = command.slice(5).trim();
+                await page.keyboard.type(text);
+                console.log(`✅ Typed: "${text}"`);
+              } 
+              else if (command.startsWith('click ')) {
+                const [x, y] = command.slice(6).trim().split(' ').map(Number);
+                await page.mouse.click(x, y);
+                console.log(`✅ Clicked: ${x},${y}`);
+              }
               lastCommand = command;
-              await new Promise(r => setTimeout(r, 2000)); // 2s delay
-            } else if (command) {
-              console.log(`⏭️ Same command skipped: "${command}"`);
-            } else {
-              console.log('⏳ No new command, waiting...');
+              await new Promise(r => setTimeout(r, 2000));
             }
             
-            // Screenshot after each loop
-            await takeScreenshot(page, config);
+            // Screenshot هر بار
+            await page.screenshot({path: 'screenshot.png', fullPage: true});
             
-            // Wait 1 minute (60s)
-            console.log('💤 Sleeping 60 seconds...');
-            await new Promise(r => setTimeout(r, 60000));
+            // هر 60 ثانیه صبر
+            if (i < config.maxLoops - 1) {
+              console.log('⏳ 60s wait...');
+              await new Promise(r => setTimeout(r, 60000));
+            }
           }
           
           await browser.close();
-          console.log('🏁 Bot finished!');
+          
+          const imageBuffer = fs.readFileSync('screenshot.png');
+          const base64Image = imageBuffer.toString('base64');
+          
+          console.log('📸=== FULL BASE64 ===');
+          console.log(base64Image.substring(0, 4000));
+          console.log('📏 Size:', base64Image.length);
+          
+          fs.writeFileSync('screenshot-base64.txt', base64Image);
+          fs.writeFileSync('screenshot.png', imageBuffer);
+          console.log('✅ Files ready!');
         })();
         EOF
-        
-        node bot.js
+        node screenshot.js
     
-    - name: 🚀 Auto Upload
+    - name: 🚀 Auto Upload & Get Raw Link
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        echo "📤 Uploading Base64..."
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot.png config.json screenshot-base64.txt bot.js command.txt
-        git commit -m "🤖 Bot executed [$(date +%Y%m%d-%H%M)]" || exit 0
+        git add screenshot.png config.json screenshot-base64.txt
+        git commit -m "📸 Auto-upload [$(date +%Y%m%d-%H%M)]"
         git push
         
         SHA=$(git rev-parse HEAD)
         RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${SHA}/screenshot-base64.txt"
-        echo "✅ UPLOADED! Raw Link: ${RAW_URL}" > upload_log.txt
+        echo "✅ UPLOADED! 📱 Raw Link:"
+        echo "🔗 ${RAW_URL}"
+        echo "📱 Direct: ${RAW_URL}"
+        echo "::notice:: Screenshot Base64 uploaded! Use: ${RAW_URL}"
+        
+        echo $RAW_URL > raw_url.txt
+        cat raw_url.txt
+    
+    - name: Final Commit (Cleanup)
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        echo "🧹 Final commit" >> README.md
+        git add README.md raw_url.txt
+        git commit -m "⏰ Final update [skip ci]" || exit 0
+        git push || exit 0
