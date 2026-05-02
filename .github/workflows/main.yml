@@ -12,7 +12,7 @@ jobs:
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: Screenshot + Base64
+    - name: Screenshot + Full Base64
       run: |
         npm init -y
         npm i puppeteer
@@ -20,7 +20,6 @@ jobs:
         const puppeteer = require('puppeteer');
         const fs = require('fs');
         
-        // JSON config
         const config = {
           url: 'https://chatgpt.com',
           width: 1920,
@@ -37,19 +36,17 @@ jobs:
           await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
           
-          // 🔥 BASE64 تبدیل
           const imageBuffer = fs.readFileSync('screenshot.png');
           const base64Image = imageBuffer.toString('base64');
-          const base64Preview = base64Image.substring(0, 100) + '...';
           
-          console.log('✅ Screenshot saved!');
-          console.log('📊 Base64 Preview:', base64Preview);
-          console.log('📏 Base64 Size:', base64Image.length, 'characters');
-          console.log('🔗 Full Base64:');
+          // 🔥 FULL Base64 در LOGS (خط به خط)
+          console.log('📸=== FULL BASE64 START ===');
           console.log(base64Image);
+          console.log('📸=== FULL BASE64 END ===');
+          console.log('📏 Size:', base64Image.length, 'chars');
           
-          // ذخیره base64 در فایل (اختیاری)
           fs.writeFileSync('screenshot-base64.txt', base64Image);
+          console.log('✅ Files saved!');
         })();
         EOF
         node screenshot.js
@@ -59,5 +56,5 @@ jobs:
         git config user.name "github-actions"
         git config user.email "actions@github.com"
         git add screenshot.png config.json screenshot-base64.txt
-        git commit -m "📸 Screenshot + Base64 [skip ci]" || exit 0
+        git commit -m "📸 Screenshot + Base64 [$(date +%Y-%m-%d)] [skip ci]" || exit 0
         git push || exit 0
