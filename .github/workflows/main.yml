@@ -1,4 +1,4 @@
-name: Screenshot
+name: Screenshot & Auto-Upload
 on: [push]
 permissions:
   contents: write
@@ -6,13 +6,13 @@ permissions:
 jobs:
   screenshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: Screenshot + Full Base64
+    - name: Screenshot + Base64
       run: |
         npm init -y
         npm i puppeteer
@@ -39,22 +39,51 @@ jobs:
           const imageBuffer = fs.readFileSync('screenshot.png');
           const base64Image = imageBuffer.toString('base64');
           
-          // 🔥 FULL Base64 در LOGS (خط به خط)
-          console.log('📸=== FULL BASE64 START ===');
-          console.log(base64Image);
-          console.log('📸=== FULL BASE64 END ===');
-          console.log('📏 Size:', base64Image.length, 'chars');
+          console.log('📸=== FULL BASE64 ===');
+          console.log(base64Image.substring(0, 4000));  // Preview
+          console.log('📏 Size:', base64Image.length);
           
           fs.writeFileSync('screenshot-base64.txt', base64Image);
-          console.log('✅ Files saved!');
+          fs.writeFileSync('screenshot.png', imageBuffer);
+          console.log('✅ Files ready!');
         })();
         EOF
         node screenshot.js
     
-    - name: Commit
+    - name: 🚀 Auto Upload & Get Raw Link
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        echo "📤 Uploading Base64..."
+        # Commit موقت برای آپلود
         git config user.name "github-actions"
         git config user.email "actions@github.com"
         git add screenshot.png config.json screenshot-base64.txt
-        git commit -m "📸 Screenshot + Base64 [$(date +%Y-%m-%d)] [skip ci]" || exit 0
+        git commit -m "📸 Auto-upload [$(date +%Y%m%d-%H%M)]"
+        git push
+        
+        # Raw URL تولید
+        SHA=$(git rev-parse HEAD)
+        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${SHA}/screenshot-base64.txt"
+        echo "✅ UPLOADED! 📱 Raw Link:"
+        echo "🔗 ${RAW_URL}"
+        echo "📱 Direct: ${RAW_URL}"
+        echo "::notice:: Screenshot Base64 uploaded! Use: ${RAW_URL}"
+        
+        # ذخیره URL
+        echo $RAW_URL > raw_url.txt
+        cat raw_url.txt
+    
+    - name: ⏳ Wait 5 Minutes
+      run: |
+        echo "⏳ Waiting 5 minutes..."
+        sleep 300
+    
+    - name: Final Commit (Cleanup)
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        echo "🧹 Final commit after delay" >> README.md
+        git add README.md raw_url.txt
+        git commit -m "⏰ Post-delay update [skip ci]" || exit 0
         git push || exit 0
