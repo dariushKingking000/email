@@ -1,9 +1,9 @@
 name: ChatGPT Screenshot Monitor
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # دستی اجرا کن
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '*/30 * * * *'  # هر 30 دقیقه
 
 jobs:
   screenshot:
@@ -29,30 +29,91 @@ jobs:
       run: |
         cat > test.js << 'EOF'
         const { chromium } = require('playwright');
-        const fs = require('fs');
         
         (async () => {
-          const browser = await chromium.launch({ headless: false });
-          const page = await browser.newPage();
-          
-          await page.goto('https://chatgpt.com');
-          await page.waitForTimeout(5000);
-          
-          const screenshot = await page.screenshot({ encoding: 'base64' });
-          console.log('🎥 CHATGPT_SCREENSHOT_BASE64: ' + screenshot.substring(0, 100) + '...');
-          
-          await page.screenshot({ path: 'chatgpt.png' });
-          console.log('✅ Screenshot saved: chatgpt.png');
-          
-          await browser.close();
+          try {
+            const browser = await chromium.launch({ 
+              headless: true,
+              args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding'
+              ]
+            });
+            
+            const context = await browser.newContext({
+              viewport: { width: 1920, height: 1080 },
+              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            });
+            
+            const page = await context.newPage();
+            
+            console.log('🌐 Navigating to ChatGPT...');
+            await page.goto('https://chatgpt.com', { 
+              waitUntil: 'networkidle',
+              timeout: 30000 
+            });
+            
+            console.log('⏳ Waiting for page to load...');
+            await page.waitForTimeout(5000);
+            
+            // چک کردن لود شدن صفحه
+            const title = await page.title();
+            console.log(`📄 Page title: ${title}`);
+            
+            // Screenshot کامل صفحه
+            await page.screenshot({ 
+              path: 'chatgpt.png',
+              fullPage: true,
+              type: 'png'
+            });
+            console.log('✅ Screenshot saved: chatgpt.png');
+            
+            // Thumbnail هم بساز
+            await page.screenshot({ 
+              path: 'chatgpt-thumb.png',
+              type: 'png'
+            });
+            console.log('✅ Thumbnail saved: chatgpt-thumb.png');
+            
+            await browser.close();
+            console.log('🎉 Browser closed successfully');
+          } catch (error) {
+            console.error('❌ Error:', error.message);
+            process.exit(1);
+          }
         })();
         EOF
         
         node test.js
     
-    - name: Upload screenshot artifact
+    - name: Upload screenshots
       uses: actions/upload-artifact@v4
       with:
         name: chatgpt-screenshots
-        path: chatgpt.png
-        retention-days: 7
+        path: |
+          chatgpt.png
+          chatgpt-thumb.png
+        retention-days: 30
+    
+    - name: Update README with latest screenshot
+      if: always()
+      run: |
+        echo "# ChatGPT Monitor" > README.md
+        echo "" >> README.md
+        echo "![ChatGPT Screenshot](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?token=$(echo ${{ github.token }} | base64))" >> README.md
+        echo "" >> README.md
+        echo "**Latest run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> README.md
+        echo "**Status:** ${{ job.status }}" >> README.md
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add README.md
+        git commit -m "Update ChatGPT screenshot [skip ci]" || echo "No changes"
+        git push || echo "Push failed"
