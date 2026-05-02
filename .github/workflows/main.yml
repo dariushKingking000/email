@@ -1,4 +1,4 @@
-name: Screenshot & Auto-Upload
+name: Screenshot & Auto-Upload (Smart command.txt)
 on: [push]
 permissions:
   contents: write
@@ -6,84 +6,84 @@ permissions:
 jobs:
   screenshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
     steps:
     - uses: actions/checkout@v4
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: Screenshot + Base64
+    - name: ⏳ Smart Check command.txt (30x 1min) + Screenshot
       run: |
         npm init -y
         npm i puppeteer
+        
         cat > screenshot.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
-        
-        const config = {
-          url: 'https://chatgpt.com',
-          width: 1920,
-          height: 1080,
-          timestamp: new Date().toISOString()
-        };
-        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
+        const { execSync } = require('child_process');
         
         (async () => {
+          const url = process.argv[1] || 'https://chatgpt.com';
+          console.log(`📸 Screenshot از: ${url}`);
+          
           const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
-          await page.setViewport({width: config.width, height: config.height});
-          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 15000});
+          await page.setViewport({width: 1920, height: 1080});
+          await page.goto(url, {waitUntil: 'networkidle2', timeout: 15000});
           await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
           
-          const imageBuffer = fs.readFileSync('screenshot.png');
-          const base64Image = imageBuffer.toString('base64');
-          
-          console.log('📸=== FULL BASE64 ===');
-          console.log(base64Image.substring(0, 4000));  // Preview
-          console.log('📏 Size:', base64Image.length);
-          
+          const base64Image = fs.readFileSync('screenshot.png').toString('base64');
           fs.writeFileSync('screenshot-base64.txt', base64Image);
-          fs.writeFileSync('screenshot.png', imageBuffer);
-          console.log('✅ Files ready!');
+          console.log('✅ Base64 آماده - Size:', base64Image.length);
         })();
         EOF
-        node screenshot.js
+        
+        FOUND=false
+        for i in {1..30}; do
+          echo "🔍 دور $i/30 - $(date)"
+          
+          # دقیقاً مثل n8n کد - git pull + check
+          git fetch origin main --force || true
+          git reset --hard origin/main || true
+          
+          if [ -f "command.txt" ]; then
+            URL=$(cat command.txt | tr -d '\n\r ')
+            if [[ "$URL" =~ ^https?:// ]]; then
+              echo "✅ command.txt پیدا شد: $URL"
+              node screenshot.js "$URL"
+              FOUND=true
+              break
+            fi
+          fi
+          
+          echo "❌ command.txt نیست یا URL نامعتبر"
+          sleep 60
+        done
+        
+        if [ "$FOUND" = false ]; then
+          echo "❌ 30 دور تمام - ChatGPT پیش‌فرض"
+          node screenshot.js
+        fi
     
-    - name: 🚀 Auto Upload & Get Raw Link
+    - name: 🚀 Upload & Raw URL
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        echo "📤 Uploading Base64..."
-        # Commit موقت برای آپلود
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot.png config.json screenshot-base64.txt
-        git commit -m "📸 Auto-upload [$(date +%Y%m%d-%H%M)]"
+        git add screenshot* *.png
+        git commit -m "📸 Smart capture [$(date +%Y%m%d-%H%M)]" || true
         git push
         
-        # Raw URL تولید
-        SHA=$(git rev-parse HEAD)
+        SHA=$(git rev-parse --short HEAD)
         RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${SHA}/screenshot-base64.txt"
-        echo "✅ UPLOADED! 📱 Raw Link:"
-        echo "🔗 ${RAW_URL}"
-        echo "📱 Direct: ${RAW_URL}"
-        echo "::notice:: Screenshot Base64 uploaded! Use: ${RAW_URL}"
-        
-        # ذخیره URL
-        echo $RAW_URL > raw_url.txt
-        cat raw_url.txt
+        echo "🔗 $RAW_URL" > raw_url.txt
+        echo "✅ UPLOADED: $RAW_URL"
     
-    - name: ⏳ Wait 5 Minutes
+    - name: Final Update
       run: |
-        echo "⏳ Waiting 5 minutes..."
-        sleep 300
-    
-    - name: Final Commit (Cleanup)
-      run: |
-        git config user.name "github-actions"
-        git config user.email "actions@github.com"
-        echo "🧹 Final commit after delay" >> README.md
-        git add README.md raw_url.txt
-        git commit -m "⏰ Post-delay update [skip ci]" || exit 0
-        git push || exit 0
+        echo "$(date): Screenshot ready - $(cat raw_url.txt)" >> history.txt
+        git add raw_url.txt history.txt
+        git commit -m "📝 Update $(date +%H:%M)" || true
+        git push || true
