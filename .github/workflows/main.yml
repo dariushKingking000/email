@@ -5,12 +5,17 @@ on:
   schedule:
     - cron: '*/30 * * * *'  # هر 30 دقیقه
 
+permissions:
+  contents: write  # 👈 این خط حیاتیه!
+
 jobs:
   screenshot:
     runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}  # 👈 اینم اضافه کن
     
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -41,16 +46,13 @@ jobs:
                 '--disable-accelerated-2d-canvas',
                 '--no-first-run',
                 '--no-zygote',
-                '--disable-gpu',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding'
+                '--disable-gpu'
               ]
             });
             
             const context = await browser.newContext({
               viewport: { width: 1920, height: 1080 },
-              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             });
             
             const page = await context.newPage();
@@ -61,37 +63,25 @@ jobs:
               timeout: 30000 
             });
             
-            console.log('⏳ Waiting for page to load...');
-            await page.waitForTimeout(5000);
+            await page.waitForTimeout(3000);
             
-            // چک کردن لود شدن صفحه
             const title = await page.title();
             console.log(`📄 Page title: ${title}`);
             
-            // Screenshot کامل صفحه
-            await page.screenshot({ 
-              path: 'chatgpt.png',
-              fullPage: true,
-              type: 'png'
-            });
-            console.log('✅ Screenshot saved: chatgpt.png');
+            await page.screenshot({ path: 'chatgpt.png', fullPage: true });
+            console.log('✅ Screenshot saved');
             
-            // Thumbnail هم بساز
-            await page.screenshot({ 
-              path: 'chatgpt-thumb.png',
-              type: 'png'
-            });
-            console.log('✅ Thumbnail saved: chatgpt-thumb.png');
+            await page.screenshot({ path: 'chatgpt-thumb.png' });
+            console.log('✅ Thumbnail saved');
             
             await browser.close();
-            console.log('🎉 Browser closed successfully');
+            console.log('🎉 Done!');
           } catch (error) {
             console.error('❌ Error:', error.message);
             process.exit(1);
           }
         })();
-        EOF
-        
+EOF
         node test.js
     
     - name: Upload screenshots
@@ -103,17 +93,24 @@ jobs:
           chatgpt-thumb.png
         retention-days: 30
     
-    - name: Update README with latest screenshot
+    - name: Update README
       if: always()
       run: |
-        echo "# ChatGPT Monitor" > README.md
-        echo "" >> README.md
-        echo "![ChatGPT Screenshot](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?token=$(echo ${{ github.token }} | base64))" >> README.md
-        echo "" >> README.md
-        echo "**Latest run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> README.md
-        echo "**Status:** ${{ job.status }}" >> README.md
-        git config user.name "GitHub Actions"
+        # بساز README جدید
+        cat > README.md << EOF
+# 🖥️ ChatGPT Monitor
+        
+## 📸 Latest Screenshot
+![ChatGPT](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ github.run_attempt }}/chatgpt-screenshots/chatgpt-thumb.png)
+
+**Latest run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) Status:** ${{ job.status }} | **Time:** $(date)
+        
+---
+*Powered by [GitHub Actions](https://github.com/features/actions)*
+EOF
+        
+        git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
         git add README.md
-        git commit -m "Update ChatGPT screenshot [skip ci]" || echo "No changes"
-        git push || echo "Push failed"
+        git commit -m "📸 Update ChatGPT screenshot [skip ci]" || echo "No changes"
+        git push || echo "Push failed - check permissions"
