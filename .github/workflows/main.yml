@@ -23,38 +23,25 @@ jobs:
         node-version: '20'
     
     - name: Install dependencies
-      run: |
-        npm init -y
-        npm install playwright
+      run: npm init -y && npm install playwright
     
     - name: Install Playwright browsers
       run: npx playwright install --with-deps chromium
     
     - name: Take ChatGPT Screenshot
       run: |
-        cat > test.js << 'EOF'
+        node -e "
         const { chromium } = require('playwright');
         (async () => {
-          const browser = await chromium.launch({ 
-            headless: true,
-            args: ['--no-sandbox','--disable-setuid-sandbox']
-          });
-          const context = await browser.newContext({
-            viewport: { width: 1920, height: 1080 }
-          });
-          const page = await context.newPage();
-          console.log('🌐 Loading ChatGPT...');
-          await page.goto('https://chatgpt.com', { 
-            waitUntil: 'networkidle', timeout: 30000 
-          });
-          await page.waitForTimeout(3000);
-          await page.screenshot({ path: 'chatgpt.png', fullPage: true });
-          await page.screenshot({ path: 'chatgpt-thumb.png' });
+          const browser = await chromium.launch({headless:true,args:['--no-sandbox']});
+          const page = await browser.newPage({viewport:{width:1920,height:1080}});
+          await page.goto('https://chatgpt.com',{waitUntil:'networkidle'});
+          await page.screenshot({path:'chatgpt.png',fullPage:true});
+          await page.screenshot({path:'chatgpt-thumb.png'});
           await browser.close();
-          console.log('✅ Done!');
-        })();
-EOF
-        node test.js
+          console.log('✅ Screenshot saved');
+        })().catch(console.error);
+        "
     
     - name: Upload screenshots
       uses: actions/upload-artifact@v4
@@ -67,18 +54,13 @@ EOF
     
     - name: Update README
       run: |
-        echo "# 🖥️ ChatGPT Monitor" > README.md
+        echo "# ChatGPT Monitor" > README.md
         echo "" >> README.md
-        echo "## 📸 Latest Screenshot" >> README.md
-        echo "![ChatGPT](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/chatgpt-screenshots/chatgpt-thumb.png)" >> README.md
+        echo "![ChatGPT](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/6763356163/chatgpt-thumb.png)" >> README.md
         echo "" >> README.md
-        echo "**Latest run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> README.md
-        echo "**Status:** ${{ job.status }}" >> README.md
-        echo "" >> README.md
-        echo "*Powered by GitHub Actions*" >> README.md
-        
-        git config user.name "GitHub Actions Bot"
-        git config user.email "actions@github.com"
+        echo "[Latest Run]($GITHUB_SERVER_URL/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})" >> README.md
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
         git add README.md
-        git commit -m "📸 Update ChatGPT screenshot [skip ci]" || echo "No changes"
+        git commit -m "Update screenshot [skip ci]" || exit 0
         git push
