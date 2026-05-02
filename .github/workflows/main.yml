@@ -1,4 +1,4 @@
-name: Screenshot & Auto-Upload (Smart command.txt)
+name: Screenshot & Auto-Upload (Fixed)
 on: [push]
 permissions:
   contents: write
@@ -9,81 +9,114 @@ jobs:
     timeout-minutes: 35
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}
+        fetch-depth: 0
     
-    - uses: browser-actions/setup-chrome@v1
+    - name: Install Chrome
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg
+        wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
     
-    - name: ⏳ Smart Check command.txt (30x 1min) + Screenshot
+    - name: Install Node & Puppeteer
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
       run: |
         npm init -y
         npm i puppeteer
-        
+    
+    - name: 🔍 Smart command.txt Check (30x)
+      run: |
         cat > screenshot.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
-        const { execSync } = require('child_process');
         
-        (async () => {
-          const url = process.argv[1] || 'https://chatgpt.com';
-          console.log(`📸 Screenshot از: ${url}`);
-          
-          const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
+        (async (url) => {
+          console.log(`📸 Capturing: ${url}`);
+          const browser = await puppeteer.launch({
+            headless: 'new',
+            executablePath: '/usr/bin/google-chrome-stable',
+            args: ['--no-sandbox', '--disable-dev-shm-usage']
+          });
           const page = await browser.newPage();
           await page.setViewport({width: 1920, height: 1080});
-          await page.goto(url, {waitUntil: 'networkidle2', timeout: 15000});
+          await page.goto(url, {waitUntil: 'networkidle2', timeout: 30000});
           await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
           
-          const base64Image = fs.readFileSync('screenshot.png').toString('base64');
-          fs.writeFileSync('screenshot-base64.txt', base64Image);
-          console.log('✅ Base64 آماده - Size:', base64Image.length);
-        })();
+          const base64 = fs.readFileSync('screenshot.png').toString('base64');
+          fs.writeFileSync('screenshot-base64.txt', base64);
+          console.log(`✅ Size: ${base64.length}`);
+        })(process.argv[1] || 'https://chatgpt.com');
         EOF
         
-        FOUND=false
+        echo "🔍 شروع 30 دور چک..."
+        FOUND=0
+        
         for i in {1..30}; do
-          echo "🔍 دور $i/30 - $(date)"
+          echo "=== دور $i/30 ($(date +%H:%M:%S)) ==="
           
-          # دقیقاً مثل n8n کد - git pull + check
-          git fetch origin main --force || true
-          git reset --hard origin/main || true
+          # Force update از remote
+          git fetch origin ${{ github.ref_name }} || true
+          git reset --hard origin/${{ github.ref_name }} || true
+          
+          # Debug: لیست فایل‌ها
+          echo "📂 فایل‌های موجود:"
+          ls -la *.txt || echo "هیچ txt نیست"
           
           if [ -f "command.txt" ]; then
-            URL=$(cat command.txt | tr -d '\n\r ')
-            if [[ "$URL" =~ ^https?:// ]]; then
-              echo "✅ command.txt پیدا شد: $URL"
+            URL=$(cat command.txt 2>/dev/null | head -1 | xargs)
+            echo "✅ command.txt: '$URL'"
+            
+            if [[ "$URL" =~ ^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/.*)?$ ]]; then
+              echo "🌐 URL معتبر: $URL"
               node screenshot.js "$URL"
-              FOUND=true
+              FOUND=1
               break
+            else
+              echo "❌ URL نامعتبر: $URL"
             fi
+          else
+            echo "❌ command.txt وجود نداره"
           fi
           
-          echo "❌ command.txt نیست یا URL نامعتبر"
           sleep 60
         done
         
-        if [ "$FOUND" = false ]; then
-          echo "❌ 30 دور تمام - ChatGPT پیش‌فرض"
+        if [ $FOUND -eq 0 ]; then
+          echo "❌ ChatGPT پیش‌فرض"
           node screenshot.js
         fi
     
-    - name: 🚀 Upload & Raw URL
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: 🚀 Commit & Upload
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot* *.png
-        git commit -m "📸 Smart capture [$(date +%Y%m%d-%H%M)]" || true
-        git push
         
+        git add screenshot* *.png *.txt
+        git commit -m "📸 $(date +%Y%m%d_%H%M)" || echo "هیچ تغییری نیست"
+        
+        git push origin HEAD:${{ github.ref_name }}
+        
+        # Raw URL درست
         SHA=$(git rev-parse --short HEAD)
-        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${SHA}/screenshot-base64.txt"
+        BRANCH=${{ github.ref_name }}
+        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${BRANCH}/${SHA}/screenshot-base64.txt"
+        
         echo "🔗 $RAW_URL" > raw_url.txt
-        echo "✅ UPLOADED: $RAW_URL"
+        echo "✅ FINAL: $RAW_URL"
+        cat raw_url.txt
     
-    - name: Final Update
+    - name: Debug Info
+      if: always()
       run: |
-        echo "$(date): Screenshot ready - $(cat raw_url.txt)" >> history.txt
-        git add raw_url.txt history.txt
-        git commit -m "📝 Update $(date +%H:%M)" || true
-        git push || true
+        echo "::group::Debug"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "SHA: $(git rev-parse --short HEAD)"
+        echo "Files: $(ls -la)"
+        echo "::endgroup::"
