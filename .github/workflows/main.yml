@@ -12,69 +12,61 @@ jobs:
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: Check command.txt & Screenshot
+    - name: ⏳ Check command.txt 30x (1min each)
       run: |
         npm init -y
         npm i puppeteer
         
-        # چک کردن command.txt
-        if [ -f "command.txt" ]; then
-          echo "✅ command.txt پیدا شد!"
-          CMD=$(cat command.txt)
-          echo "URL سفارشی: $CMD"
-          URL="$CMD"
-        else
-          echo "❌ command.txt نیست - ChatGPT پیش‌فرض"
-          URL="https://chatgpt.com"
-        fi
-        
         cat > screenshot.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
-        
-        const config = {
-          url: process.env.URL || 'https://chatgpt.com',
-          width: 1920,
-          height: 1080,
-          timestamp: new Date().toISOString()
-        };
-        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-        
-        (async () => {
+        (async (url) => {
           const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
-          await page.setViewport({width: config.width, height: config.height});
-          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 15000});
+          await page.setViewport({width: 1920, height: 1080});
+          await page.goto(url, {waitUntil: 'networkidle2', timeout: 15000});
           await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
           
-          const imageBuffer = fs.readFileSync('screenshot.png');
-          const base64Image = imageBuffer.toString('base64');
-          
-          console.log('📸=== FULL BASE64 ===');
-          console.log(base64Image.substring(0, 4000));
-          console.log('📏 Size:', base64Image.length);
-          
-          fs.writeFileSync('screenshot-base64.txt', base64Image);
-          fs.writeFileSync('screenshot.png', imageBuffer);
-          console.log('✅ Files ready!');
-        })();
+          const base64 = fs.readFileSync('screenshot.png').toString('base64');
+          fs.writeFileSync('screenshot-base64.txt', base64);
+          console.log('✅ Screenshot OK - Size:', base64.length);
+        })(process.argv[1]);
         EOF
         
-        export URL="$URL"
-        node screenshot.js
+        FOUND=false
+        for i in {1..30}; do
+          echo "🔍 دور $i/30 - $(date)"
+          
+          if [ -f "command.txt" ]; then
+            URL=$(cat command.txt)
+            FOUND=true
+            echo "✅ command.txt پیدا شد: $URL"
+            node screenshot.js "$URL"
+            break
+          else
+            echo "❌ دور $i - command.txt نیست"
+          fi
+          
+          sleep 60  # 1 دقیقه صبر
+        done
+        
+        if [ "$FOUND" = false ]; then
+          echo "❌ بعد 30 دور command.txt پیدا نشد - ChatGPT"
+          node screenshot.js "https://chatgpt.com"
+        fi
     
-    - name: 🚀 Auto Upload & Get Raw Link
+    - name: 🚀 Upload
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot.png config.json screenshot-base64.txt
-        git commit -m "📸 Auto-upload [$(date +%Y%m%d-%H%M)]"
+        git add screenshot* *.png
+        git commit -m "📸 $(date +%Y%m%d-%H%M)"
         git push
         
         SHA=$(git rev-parse HEAD)
         RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${SHA}/screenshot-base64.txt"
-        echo "✅ UPLOADED! Raw Link: ${RAW_URL}"
-        echo $RAW_URL > raw_url.txt
+        echo "🔗 $RAW_URL" > raw_url.txt
+        echo "✅ آپلود شد: $RAW_URL"
