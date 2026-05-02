@@ -25,42 +25,108 @@ jobs:
     - name: Install dependencies
       run: npm init -y && npm install playwright
     
-    - name: Install Playwright browsers
+    - name: Install Playwright
       run: npx playwright install --with-deps chromium
     
-    - name: Take ChatGPT Screenshot
+    - name: Take Screenshot
       run: |
-        node -e "
+        npx playwright run -c << 'EOF'
         const { chromium } = require('playwright');
+        
         (async () => {
-          const browser = await chromium.launch({headless:true,args:['--no-sandbox']});
-          const page = await browser.newPage({viewport:{width:1920,height:1080}});
-          await page.goto('https://chatgpt.com',{waitUntil:'networkidle'});
-          await page.screenshot({path:'chatgpt.png',fullPage:true});
-          await page.screenshot({path:'chatgpt-thumb.png'});
+          const browser = await chromium.launch({
+            headless: true,
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-accelerated-2d-canvas',
+              '--no-first-run',
+              '--no-zygote',
+              '--disable-gpu',
+              '--disable-extensions',
+              '--disable-plugins',
+              '--disable-images'
+            ]
+          });
+          
+          const context = await browser.newContext({
+            viewport: { width: 1920, height: 1080 },
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            locale: 'en-US',
+            timezoneId: 'America/New_York',
+            extraHTTPHeaders: {
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            }
+          });
+          
+          const page = await context.newPage();
+          
+          // Stealth mode
+          await page.addInitScript(() => {
+            Object.defineProperty(navigator, 'webdriver', {
+              get: () => undefined,
+            });
+          });
+          
+          console.log('🌐 Loading...');
+          
+          // اول OpenAI برو، بعد ChatGPT
+          await page.goto('https://openai.com/chatgpt/', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 60000 
+          });
+          
+          await page.waitForTimeout(5000);
+          
+          // ChatGPT link پیدا کن
+          try {
+            await page.click('text=Try ChatGPT');
+            await page.waitForURL('**/chatgpt**', { timeout: 10000 });
+          } catch(e) {
+            console.log('🔄 Direct navigation');
+            await page.goto('https://chatgpt.com', { 
+              waitUntil: 'domcontentloaded',
+              timeout: 60000 
+            });
+          }
+          
+          await page.waitForTimeout(8000);
+          
+          const title = await page.title();
+          console.log(`📄 Title: ${title}`);
+          
+          await page.screenshot({ path: 'chatgpt.png', fullPage: true });
+          await page.screenshot({ path: 'chatgpt-thumb.png' });
+          
+          console.log('✅ Screenshots saved');
           await browser.close();
-          console.log('✅ Screenshot saved');
-        })().catch(console.error);
-        "
+        })().catch(e => {
+          console.error('❌ Error:', e.message);
+          process.exit(1);
+        });
+EOF
     
     - name: Upload screenshots
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: chatgpt-screenshots
         path: |
           chatgpt.png
           chatgpt-thumb.png
-        retention-days: 30
     
     - name: Update README
+      if: always()
       run: |
         echo "# ChatGPT Monitor" > README.md
         echo "" >> README.md
-        echo "![ChatGPT](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/6763356163/chatgpt-thumb.png)" >> README.md
+        echo "![ChatGPT](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/chatgpt-screenshots/chatgpt-thumb.png)" >> README.md
         echo "" >> README.md
-        echo "[Latest Run]($GITHUB_SERVER_URL/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})" >> README.md
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        echo "Latest: [${GITHUB_RUN_ID}]($GITHUB_SERVER_URL/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})" >> README.md
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
         git add README.md
-        git commit -m "Update screenshot [skip ci]" || exit 0
-        git push
+        git commit -m "Update screenshot" || true
+        git push || true
