@@ -1,4 +1,4 @@
-name: Screenshot & Auto-Upload
+name: Screenshot Wait & Check
 on: [push]
 permissions:
   contents: write
@@ -6,13 +6,13 @@ permissions:
 jobs:
   screenshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
     steps:
     - uses: actions/checkout@v4
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: ⏳ Check command.txt 30x (1min each)
+    - name: ⏳ 30x Check command.txt (1min)
       run: |
         npm init -y
         npm i puppeteer
@@ -27,38 +27,40 @@ jobs:
           await page.goto(url, {waitUntil: 'networkidle2', timeout: 15000});
           await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
-          
           const base64 = fs.readFileSync('screenshot.png').toString('base64');
           fs.writeFileSync('screenshot-base64.txt', base64);
-          console.log('✅ Screenshot OK - Size:', base64.length);
         })(process.argv[1]);
         EOF
         
         FOUND=false
         for i in {1..30}; do
-          echo "🔍 دور $i/30 - $(date)"
+          echo "🔍 Check $i/30 - $(date)"
           
-          if [ -f "command.txt" ]; then
-            URL=$(cat command.txt)
+          # GitHub API چک کردن command.txt
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/dariushKingking000/email/contents/command.txt?ref=${{ github.ref_name }}")
+          
+          if echo "$RESPONSE" | grep -q '"name":"command.txt"'; then
+            echo "✅ command.txt پیدا شد!"
+            URL=$(echo "$RESPONSE" | grep -o '"download_url":"[^"]*' | cut -d'"' -f4)
+            CONTENT=$(curl -s "$URL")
+            echo "URL: $CONTENT"
+            node screenshot.js "$CONTENT"
             FOUND=true
-            echo "✅ command.txt پیدا شد: $URL"
-            node screenshot.js "$URL"
             break
           else
-            echo "❌ دور $i - command.txt نیست"
+            echo "❌ command.txt نیست"
           fi
           
-          sleep 60  # 1 دقیقه صبر
+          sleep 60
         done
         
         if [ "$FOUND" = false ]; then
-          echo "❌ بعد 30 دور command.txt پیدا نشد - ChatGPT"
+          echo "❌ 30 دور تموم - ChatGPT"
           node screenshot.js "https://chatgpt.com"
         fi
     
     - name: 🚀 Upload
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
@@ -66,7 +68,8 @@ jobs:
         git commit -m "📸 $(date +%Y%m%d-%H%M)"
         git push
         
-        SHA=$(git rev-parse HEAD)
-        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${SHA}/screenshot-base64.txt"
+        # درست کردن RAW URL
+        SHA_SHORT=$(git rev-parse --short HEAD)
+        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${SHA_SHORT}/screenshot-base64.txt"
         echo "🔗 $RAW_URL" > raw_url.txt
-        echo "✅ آپلود شد: $RAW_URL"
+        echo "✅ $RAW_URL"
