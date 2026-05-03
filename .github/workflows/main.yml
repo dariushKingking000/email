@@ -1,56 +1,35 @@
 name: Screenshot Bot
-on:
-  push:
+on: push
 permissions:
   contents: write
 
 jobs:
   bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
     steps:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    
     - uses: browser-actions/setup-chrome@v1
-    
-    - name: Install
-      run: npm init -y && npm i puppeteer@24.15.0
-    
+    - run: npm init -y && npm i puppeteer@24.15.0
+      name: Install
     - name: Setup Bot
       run: |
-        echo "node_modules/
-bot.js
-package.json
-package-lock.json
-screenshot.png
-screenshot-base64.txt" > .gitignore
+        echo node_modules/ > .gitignore
+        echo bot.js >> .gitignore
+        echo screenshot.png >> .gitignore
+        echo screenshot-base64.txt >> .gitignore
         
-        cat > bot.js << 'EOF'
-const puppeteer=require("puppeteer");const fs=require("fs");(async(cmd)=>{console.log("📄 "+cmd);const b=await puppeteer.launch({headless:"new",args:["--no-sandbox"]});const p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto("https://chatgpt.com",{waitUntil:"networkidle2"});if(cmd&&cmd!=="exit"){console.log("🚀 "+cmd);if(cmd.startsWith("click ")){const[x,y]=cmd.slice(6).split(" ").map(Number);await p.mouse.click(x,y);console.log("🖱️ "+x+","+y);await new Promise(r=>setTimeout(r,2000));}else if(cmd.startsWith("type ")){await p.keyboard.type(cmd.slice(5),{delay:50});console.log("⌨️ تایپ");await new Promise(r=>setTimeout(r,1500));}}await p.screenshot({path:"screenshot.png",fullPage:true});await b.close();const img=fs.readFileSync("screenshot.png");const base64=img.toString("base64");fs.writeFileSync("screenshot-base64.txt",base64);console.log("✅ Files OK");})(process.argv[2]);
+        cat>bot.js<<EOF
+const puppeteer=require("puppeteer");const fs=require("fs");(async(cmd)=>{console.log("📄"+cmd);const b=await puppeteer.launch({headless:"new",args:["--no-sandbox"]});const p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto("https://chatgpt.com");if(cmd&&cmd!=="exit"){console.log("🚀"+cmd);if(cmd.startsWith("click ")){const[x,y]=cmd.slice(6).split(" ").map(Number);await p.mouse.click(x,y);console.log("🖱️"+x+","+y);await new Promise(r=>setTimeout(r,2000));}}await p.screenshot({path:"screenshot.png",fullPage:true});await b.close();fs.writeFileSync("screenshot-base64.txt",fs.readFileSync("screenshot.png").toString("base64"));console.log("✅OK");})(process.argv[2]);
 EOF
-
     - name: LOOP
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        git config --global user.name "bot"
-        git config --global user.email "bot@github.com"
-        LOOP=1
-        while [ $LOOP -eq 1 ]; do
-          git fetch origin main
-          git reset --hard origin/main
-          if [ -f "command.txt" ]; then
-            CONTENT=$(cat command.txt | xargs)
-            if [ "$CONTENT" = "exit" ]; then LOOP=0;
-            elif [ -n "$CONTENT" ]; then
-              echo "✅ $CONTENT"
-              node bot.js "$CONTENT"
-              git add screenshot* || true
-              git commit -m "📸 $CONTENT" || true
-              git push origin main || true
-            fi
-          fi
-          sleep 30
+        git config user.name bot
+        git config user.email bot@github.com
+        while true; do
+          git pull origin main
+          [ -f command.txt ] && CONTENT=$(cat command.txt|xargs) && [ "$CONTENT" != exit ] && node bot.js "$CONTENT" && git add screenshot* && git commit -m "📸$CONTENT" && git push || sleep 30
         done
