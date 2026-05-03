@@ -20,67 +20,32 @@ jobs:
         screenshot.png
         screenshot-base64.txt
         command.txt
-        last_command.txt
         EOF
         
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        
-        // Global browser state
-        let browser = null;
-        let page = null;
-        
-        async function initOrReuseBrowser() {
-          console.log("🔍 Status check...");
-          
-          // اگر browser وجود داره و بازه
-          if (browser && page && !browser.isClosed?.()) {
-            console.log("✅ REUSE: همون مرورگر قبلی!");
-            try {
-              await page.bringToFront();
-              return;
-            } catch(e) {
-              console.log("⚠️ Page خراب - new page");
-              page = await browser.newPage();
-            }
-          }
-          
-          console.log("🌐 NEW BROWSER");
-          browser = await puppeteer.launch({
-            headless: "new",
-            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-background-timer-throttling"]
-          });
-          
-          page = await browser.newPage();
-          await page.setViewport({width: 1920, height: 1080});
-          await page.goto("https://chatgpt.com", { waitUntil: 'networkidle2', timeout: 30000 });
-          console.log("✅ Browser آماده");
-        }
-        
         (async(cmd) => {
-          try {
-            console.log("📄 Cmd:", cmd);
-            await initOrReuseBrowser();
-            
-            if (cmd?.startsWith("click ")) {
-              const [x, y] = cmd.slice(6).trim().split(" ").map(Number);
-              console.log(`🖱️ Click ${x},${y}`);
-              await page.mouse.click(x, y);
-              await new Promise(r => setTimeout(r, 2500));
+          console.log("📄" + cmd);
+          const b = await puppeteer.launch({
+            headless: "new",
+            args: ["--no-sandbox"]
+          });
+          const p = await b.newPage();
+          await p.setViewport({width: 1920, height: 1080});
+          await p.goto("https://chatgpt.com");
+          if (cmd && cmd !== "exit") {
+            if (cmd.startsWith("click ")) {
+              const [x, y] = cmd.slice(6).split(" ").map(Number);
+              await p.mouse.click(x, y);
+              await new Promise(r => setTimeout(r, 2000));
             }
-            
-            await page.screenshot({path: "screenshot.png", fullPage: true});
-            fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-            console.log("✅ Screenshot OK | Exit 0");
-            process.exit(0);
-            
-          } catch(e) {
-            console.error("💥 Error:", e.message);
-            if (browser) await browser.close();
-            process.exit(1);
           }
-        })(process.argv[2] || '');
+          await p.screenshot({path: "screenshot.png", fullPage: true});
+          await b.close();
+          fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
+          console.log("✅OK");
+        })(process.argv[2]);
         EOF
     - name: LOOP
       env:
@@ -88,47 +53,19 @@ jobs:
       run: |
         git config user.name bot
         git config user.email bot@github.com
-        git config advice.addIgnoredFile false
-        
-        rm -f last_command.txt
-        
-        COUNTER=0
         while true; do
-          git pull origin main || true
-          
+          git pull origin main
           if [ -f command.txt ]; then
-            CONTENT=$(cat command.txt | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            
-            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt 2>/dev/null || echo '')" != "$CONTENT" ]; then
-              if [ "$CONTENT" != "exit" ]; then
-                echo "🆕 NEW: $CONTENT"
-                node bot.js "$CONTENT"
-                RC=$?
-                echo "📊 RC: $RC"
-                if [ $RC -eq 0 ]; then
-                  git add -f screenshot.png screenshot-base64.txt || true
-                  if git diff --staged --quiet; then
-                    echo "ℹ️ No changes"
-                  else
-                    git commit -m "📸 $CONTENT" || true
-                    git push || true
-                  fi
-                  echo "$CONTENT" > last_command.txt
-                  COUNTER=0
-                fi
-              else
-                echo "🛑 EXIT"
-                exit 0
-              fi
-            else
-              echo "🔄 Duplicate: $CONTENT"
-              COUNTER=$((COUNTER + 1))
+            CONTENT=$(cat command.txt)
+            if [ "$CONTENT" != "exit" ]; then
+              node bot.js "$CONTENT"
+              git add screenshot* .gitignore
+              git commit -m "📸$CONTENT" || true
+              git push || true
             fi
-          else
-            echo "⏳ Wait..."
-            COUNTER=$((COUNTER + 1))
           fi
-          
-          [ $COUNTER -ge 30 ] && { echo "🔄 Reset"; rm -f last_command.txt; COUNTER=0; }
           sleep 60
         done
+
+
+
