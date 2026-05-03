@@ -32,11 +32,11 @@ jobs:
         
         async function ensureBrowser() {
           try {
-            if (!browser || browser.isClosed?.()) {
+            if (!browser || (browser.isClosed && browser.isClosed())) {
               console.log("🌐 باز کردن مرورگر جدید...");
               browser = await puppeteer.launch({
                 headless: "new",
-                args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-web-security"]
+                args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
               });
               page = await browser.newPage();
               await page.setViewport({width: 1920, height: 1080});
@@ -45,9 +45,7 @@ jobs:
             }
           } catch(e) {
             console.error("❌ خطای مرورگر:", e.message);
-            if (browser) {
-              await browser.close();
-            }
+            if (browser) await browser.close();
             browser = null;
             page = null;
             throw e;
@@ -55,35 +53,29 @@ jobs:
         }
         
         (async(cmd) => {
+          console.log("📄 دستور:", cmd);
+          await ensureBrowser();
+          
           try {
-            console.log("📄 دستور:", cmd);
-            await ensureBrowser();
-            
             if (cmd && cmd !== "exit") {
               if (cmd.startsWith("click ")) {
                 const coords = cmd.slice(6).trim().split(" ");
                 const x = parseInt(coords[0]);
                 const y = parseInt(coords[1]);
-                console.log(`🖱️ کلیک در مختصات: ${x}, ${y}`);
-                
+                console.log(`🖱️ کلیک: ${x}, ${y}`);
                 await page.mouse.click(x, y);
-                // fix: استفاده از Promise به جای waitForTimeout
-                await new Promise(r => setTimeout(r, 3000));
+                await new Promise(r => setTimeout(r, 2000));
               }
             }
             
             await page.screenshot({path: "screenshot.png", fullPage: true});
-            const base64 = fs.readFileSync("screenshot.png").toString("base64");
-            fs.writeFileSync("screenshot-base64.txt", base64);
-            console.log("✅ اسکرین‌شات ذخیره شد");
+            fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
+            console.log("✅ اسکرین‌شات OK - EXIT 0");
+            process.exit(0);
             
           } catch(e) {
             console.error("❌ خطا:", e.message);
-            if (browser) {
-              await browser.close();
-              browser = null;
-              page = null;
-            }
+            process.exit(1);
           }
         })(process.argv[2]);
         EOF
@@ -106,13 +98,18 @@ jobs:
             if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
               if [ "$CONTENT" != "exit" ]; then
                 echo "🆕 دستور جدید: $CONTENT"
-                timeout 120 node bot.js "$CONTENT" || echo "❌ خطا یا timeout"
-                git add screenshot.png screenshot-base64.txt .gitignore || true
-                git commit -m "📸 $CONTENT" || true
-                git push || true
-                
-                echo "$CONTENT" > last_command.txt
-                COUNTER=0
+                node bot.js "$CONTENT"
+                RC=$?
+                echo "📊 Exit code: $RC"
+                if [ $RC -eq 0 ]; then
+                  git add screenshot.png screenshot-base64.txt .gitignore
+                  git commit -m "📸 $CONTENT" || true
+                  git push || true
+                  echo "$CONTENT" > last_command.txt
+                  COUNTER=0
+                else
+                  echo "❌ bot شکست خورد - skip commit"
+                fi
               else
                 echo "🛑 خروج"
                 exit 0
