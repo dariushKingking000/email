@@ -22,13 +22,14 @@ jobs:
       run: |
         git config --global user.name "github-actions"
         git config --global user.email "actions@github.com"
-        git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
         
-        echo "node_modules/" > .gitignore
+        # Create .gitignore if not exists
+        touch .gitignore
+        echo "node_modules/" >> .gitignore
         echo "bot.js" >> .gitignore
         echo "package.json" >> .gitignore
         echo "package-lock.json" >> .gitignore
-        git add .gitignore || true
+        git add .gitignore
         
         npm init -y && npm i puppeteer@24.15.0
         
@@ -45,16 +46,36 @@ jobs:
               LOOP=0
             elif [ -n "$CONTENT" ]; then
               echo "✅ '$CONTENT'"
-              node -e "const puppeteer=require('puppeteer');const fs=require('fs');(async(cmd)=>{const b=await puppeteer.launch({headless:'new',args:['--no-sandbox']});const p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto('https://chatgpt.com',{waitUntil:'networkidle2'});if(cmd.startsWith('click ')){const[x,y]=cmd.slice(6).split(' ').map(Number);await p.mouse.click(x,y);}else if(cmd.startsWith('type ')){await p.keyboard.type(cmd.slice(5),{delay:50});}await p.screenshot({path:'screenshot.png',fullPage:true});await b.close();const img=fs.readFileSync('screenshot.png');fs.writeFileSync('screenshot-base64.txt',img.toString('base64'));console.log('✅ OK');})(process.argv[1]);" "$CONTENT"
+              node -e "
+const puppeteer=require('puppeteer');
+const fs=require('fs');
+(async(cmd)=>{
+  const b=await puppeteer.launch({headless:'new',args:['--no-sandbox']});
+  const p=await b.newPage();
+  await p.setViewport({width:1920,height:1080});
+  await p.goto('https://chatgpt.com',{waitUntil:'networkidle2'});
+  if(cmd.startsWith('click ')){
+    const[x,y]=cmd.slice(6).split(' ').map(Number);
+    await p.mouse.click(x,y);
+    console.log('🖱️ '+x+','+y);
+  }else if(cmd.startsWith('type ')){
+    await p.keyboard.type(cmd.slice(5),{delay:50});
+    console.log('⌨️ تایپ');
+  }
+  await p.screenshot({path:'screenshot.png',fullPage:true});
+  await b.close();
+  const img=fs.readFileSync('screenshot.png');
+  fs.writeFileSync('screenshot-base64.txt',img.toString('base64'));
+  console.log('✅ Files OK');
+})(process.argv[1]);
+" "$CONTENT"
               
-              git add -f screenshot.png screenshot-base64.txt .gitignore || true
-              if ! git diff --staged --quiet; then
-                git commit -m "📸 [$(date +%H:%M:%S)] $CONTENT"
-                git push origin main
-                echo "📤 NEW screenshot uploaded"
-              else
-                echo "⚠️ No new changes"
-              fi
+              # Always add screenshots - force even if no .gitignore issue
+              git add screenshot.png screenshot-base64.txt .gitignore || true
+              
+              git commit -m "📸 [$(date +%H:%M:%S)] $CONTENT" || echo "⚠️ No commit"
+              git push origin main || echo "⚠️ No push"
+              echo "📤 Screenshot updated"
             fi
           fi
           sleep 30
