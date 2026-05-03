@@ -7,21 +7,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Install deps
-      run: |
-        sudo apt update -y
-        sudo apt install -y xvfb ffmpeg git zip unzip x11-xkb-utils
-    
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    
+    - uses: browser-actions/setup-chrome@v1
     - name: Install
-      run: npm init -y && npm i puppeteer@latest
-    
-    - name: Setup Bot
+      run: npm init -y && npm i puppeteer
+    - name: Setup
       run: |
         cat > .gitignore << EOF
         node_modules/
@@ -42,76 +31,55 @@ jobs:
         let browser = null;
         let page = null;
         
-        async function init() {
+        async function initBrowser() {
           if (!browser) {
-            console.log("🚀 مرورگر...");
             browser = await puppeteer.launch({
-              headless: false,
-              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+              headless: "new",
+              args: ["--no-sandbox"]
             });
             page = await browser.newPage();
-            await page.setViewport({ width: 1920, height: 1080 });
-            
-            // لود state
-            let url = 'https://chatgpt.com';
-            if (fs.existsSync('browser_state.json')) {
-              try {
-                const state = JSON.parse(fs.readFileSync('browser_state.json', 'utf8'));
-                url = state.url || url;
-              } catch(e){}
-            }
-            
-            await page.goto(url, { waitUntil: 'networkidle0' });
-            await new Promise(r => setTimeout(r, 3000));
-            console.log("✅ URL:", page.url());
+            await page.setViewport({width: 1920, height: 1080});
+            await page.goto("https://chatgpt.com");
           }
-          return page;
         }
         
-        async function saveState() {
-          if (page) {
-            try {
-              const state = { url: page.url() };
-              fs.writeFileSync('browser_state.json', JSON.stringify(state));
-            } catch(e){}
+        async function executeCmd(cmd) {
+          console.log("📄" + cmd);
+          await initBrowser();
+          
+          if (cmd && cmd !== "exit") {
+            if (cmd.startsWith("click ")) {
+              const [x, y] = cmd.slice(6).split(" ").map(Number);
+              await page.mouse.click(x, y);
+              await new Promise(r => setTimeout(r, 2000));
+            }
+          }
+          
+          await page.screenshot({path: "screenshot.png", fullPage: true});
+          fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
+          console.log("✅OK");
+        }
+        
+        async function cleanup() {
+          if (browser) {
+            await browser.close();
+            browser = null;
+            page = null;
           }
         }
+        
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
         
         (async(cmd) => {
           try {
-            console.log("📄 " + cmd);
-            const p = await init();
-            
-            if (cmd === "exit") {
-              await browser.close();
-              process.exit(0);
-            }
-            
-            if (cmd.startsWith("click ")) {
-              const [x, y] = cmd.slice(6).split(" ").map(Number);
-              await p.mouse.click(x, y);
-              console.log(`✅ کلیک ${x},${y}`);
-            } 
-            else if (cmd.startsWith("type ")) {
-              const text = cmd.slice(5);
-              await p.click('textarea, input[type="text"]');
-              await p.keyboard.type(text);
-              console.log(`✅ تایپ: ${text}`);
-            }
-            
-            await new Promise(r => setTimeout(r, 2000));
-            await p.screenshot({path: "screenshot.png", fullPage: true});
-            fs.writeFileSync("screenshot-base64.txt", 
-              fs.readFileSync("screenshot.png").toString("base64"));
-            
-            await saveState();
-            console.log("✅OK");
+            await executeCmd(cmd);
           } catch(e) {
-            console.log("❌", e.message);
+            console.error("❌ Error:", e.message);
+            await cleanup();
           }
         })(process.argv[2]);
         EOF
-    
     - name: LOOP
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -119,26 +87,47 @@ jobs:
         git config user.name bot
         git config user.email bot@github.com
         
-        rm -f last_command.txt
-        export DISPLAY=:99
-        Xvfb :99 -screen 0 1920x1080x24 -ac -noreset &
-        sleep 3
+        # فایل دستور قبلی رو پاک کن
+        rm -f last_command.txt browser_state.json
         
+        COUNTER=0
         while true; do
           git pull origin main
           
           if [ -f command.txt ]; then
-            cmd=$(cat command.txt)
-            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$cmd" ]; then
-              echo "🆕 $cmd"
-              node bot.js "$cmd"
-              git add screenshot* browser_state.json .gitignore
-              git commit -m "📸$cmd" || true
-              git push || true
-              echo "$cmd" > last_command.txt
+            CONTENT=$(cat command.txt)
+            
+            # دستور قبلی رو چک کن
+            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
+              if [ "$CONTENT" != "exit" ]; then
+                echo "🆕 دستور جدید: $CONTENT"
+                node bot.js "$CONTENT"
+                git add screenshot* .gitignore browser_state.json || true
+                git commit -m "📸$CONTENT" || true
+                git push || true
+                
+                # دستور فعلی رو ذخیره کن
+                echo "$CONTENT" > last_command.txt
+                COUNTER=0
+              else
+                echo "🛑 خروج"
+                exit 0
+              fi
+            else
+              echo "🔄 دستور تکراری: $CONTENT"
+              COUNTER=$((COUNTER + 1))
             fi
-            rm -f command.txt
+          else
+            echo "⏳ منتظر command.txt..."
+            COUNTER=$((COUNTER + 1))
           fi
           
-          sleep 30
+          # بعد 30 بار تکرار (30 دقیقه) ریست کن
+          if [ $COUNTER -ge 30 ]; then
+            echo "🔄 ریست کانتر"
+            rm -f last_command.txt browser_state.json
+            COUNTER=0
+          fi
+          
+          sleep 60
         done
