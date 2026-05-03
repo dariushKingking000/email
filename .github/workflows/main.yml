@@ -20,44 +20,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        npm init -y
-        npm i puppeteer@22.12.1
-        
-        cat > bot.js << EOF
-const puppeteer = require('puppeteer');
-const fs = require('fs');
-(async (cmdContent) => {
-  console.log("📄 " + cmdContent);
-  const browser = await puppeteer.launch({headless: 'new', args: ['--no-sandbox']});
-  const page = await browser.newPage();
-  await page.setViewport({width: 1920, height: 1080});
-  await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2'});
-  
-  if (cmdContent && cmdContent !== 'exit') {
-    console.log("🚀 " + cmdContent);
-    if (cmdContent.startsWith('click ')) {
-      const parts = cmdContent.slice(6).split(' ');
-      const x = parseInt(parts[0]);
-      const y = parseInt(parts[1]);
-      await page.mouse.click(x, y);
-      console.log("🖱️ " + x + "," + y);
-      await new Promise(r=>setTimeout(r,2000));
-    } else if (cmdContent.startsWith('type ')) {
-      await page.keyboard.type(cmdContent.slice(5));
-      console.log('⌨️ تایپ');
-      await new Promise(r=>setTimeout(r,1000));
-    }
-  }
-  
-  await page.screenshot({path: 'screenshot.png', fullPage: true});
-  await browser.close();
-  
-  const imgBuffer = fs.readFileSync('screenshot.png');
-  const base64 = imgBuffer.toString('base64');
-  fs.writeFileSync('screenshot-base64.txt', base64);
-  console.log('✅ Files OK');
-})(process.argv[2]);
-EOF
+        npm init -y && npm i puppeteer@22.12.1
+        echo 'const puppeteer = require("puppeteer");const fs = require("fs");(async(cmdContent)=>{console.log("📄 "+cmdContent);const browser=await puppeteer.launch({headless:"new",args:["--no-sandbox"]});const page=await browser.newPage();await page.setViewport({width:1920,height:1080});await page.goto("https://chatgpt.com",{waitUntil:"networkidle2"});if(cmdContent&&cmdContent!=="exit"){console.log("🚀 "+cmdContent);if(cmdContent.startsWith("click ")){const parts=cmdContent.slice(6).split(" ");const x=parseInt(parts[0]);const y=parseInt(parts[1]);await page.mouse.click(x,y);console.log("🖱️ "+x+","+y);await new Promise(r=>setTimeout(r,2000));}else if(cmdContent.startsWith("type ")){await page.keyboard.type(cmdContent.slice(5));console.log("⌨️ تایپ");await new Promise(r=>setTimeout(r,1000));}}await page.screenshot({path:"screenshot.png",fullPage:true});await browser.close();const imgBuffer=fs.readFileSync("screenshot.png");const base64=imgBuffer.toString("base64");fs.writeFileSync("screenshot-base64.txt",base64);console.log("✅ Files OK");})(process.argv[2]);' > bot.js
         
         git config --global user.name "github-actions"
         git config --global user.email "actions@github.com"
