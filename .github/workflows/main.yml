@@ -1,4 +1,4 @@
-name: Screenshot Bot (Loop + Exit)
+name: Screenshot Bot (Real Upload)
 on: [push]
 permissions:
   contents: write
@@ -8,127 +8,116 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-    - uses: actions/checkout@v4
-    
+    - name: 🔄 Checkout + Setup
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
     - uses: browser-actions/setup-chrome@v1
     
-    - name: 🔄 LOOP - Wait/Exec/Repeat
+    - name: ⏳ Wait for command (30x)
+      id: wait-cmd
+      run: |
+        FOUND=0
+        for i in {1..30}; do
+          echo "🔍 $i/30 ($(date +%H:%M:%S))"
+          
+          git fetch origin ${{ github.ref_name }}
+          git reset --hard origin/${{ github.ref_name }}
+          
+          if [ -f "command.txt" ]; then
+            CONTENT=$(cat command.txt | head -1 | xargs)
+            if [ -n "$CONTENT" ]; then
+              echo "✅ '$CONTENT'"
+              echo "content=$CONTENT" >> $GITHUB_OUTPUT
+              FOUND=1
+              break
+            fi
+          fi
+          echo "⏳ 1min"
+          sleep 60
+        done
+        
+        if [ $FOUND -eq 0 ]; then
+          echo "content=" >> $GITHUB_OUTPUT
+          echo "❌ خالی"
+        fi
+    
+    - name: 🤖 Bot Execute
+      env:
+        CMD_CONTENT: ${{ steps.wait-cmd.outputs.content }}
       run: |
         npm init -y
         npm i puppeteer
         
-        cat > bot-loop.js << 'EOF'
-        (async () => {
-          const puppeteer = require('puppeteer');
-          const fs = require('fs');
-          const { execSync } = require('child_process');
-          
-          async function runBot() {
-            try {
-              execSync('git fetch origin main && git reset --hard origin/main', {stdio: 'inherit'});
-            } catch(e) {
-              console.log('⚠️ Git آپدیت خطا');
-            }
-            
-            let cmdContent = '';
-            if (fs.existsSync('command.txt')) {
-              cmdContent = fs.readFileSync('command.txt', 'utf8').trim();
-            }
-            
-            console.log(`📄 Command: "${cmdContent}"`);
-            
-            if (cmdContent === 'exit') {
-              console.log('🛑 EXIT');
-              fs.writeFileSync('status.txt', 'EXIT');
-              return false;
-            }
-            
-            if (!cmdContent) {
-              console.log('⏳ خالی - 1min');
-              return true;
-            }
-            
-            console.log(`🚀 ${cmdContent}`);
-            const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
-            const page = await browser.newPage();
-            await page.setViewport({width: 1920, height: 1080});
-            
-            await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2'});
-            
-            if (cmdContent.startsWith('click ')) {
-              const coords = cmdContent.slice(6).split(' ');
-              if (coords.length === 2) {
-                const x = parseInt(coords[0]), y = parseInt(coords[1]);
-                await page.mouse.click(x, y);
-                console.log(`🖱️ ${x},${y}`);
-                await new Promise(r => setTimeout(r, 2000));
-              }
-            } else if (cmdContent.startsWith('type ')) {
-              const text = cmdContent.slice(5);
-              await page.keyboard.type(text);
-              console.log(`⌨️ "${text}"`);
-              await new Promise(r => setTimeout(r, 1000));
-            }
-            
-            await page.screenshot({path: 'screenshot.png', fullPage: true});
-            await browser.close();
-            
-            const base64Image = fs.readFileSync('screenshot.png').toString('base64');
-            fs.writeFileSync('screenshot-base64.txt', base64Image);
-            fs.writeFileSync('log.txt', `Cmd: ${cmdContent}`);
-            console.log('✅ آپلود');
-            
-            return true;
-          }
-          
-          let loop = true;
-          let count = 0;
-          while (loop && count < 30) {
-            count++;
-            console.log(`🔄 ${count}/30`);
-            loop = await runBot();
-            if (loop) {
-              await new Promise(r => setTimeout(r, 60000));
-            }
-          }
-          
-          fs.writeFileSync('status.txt', loop ? 'TIMEOUT' : 'EXIT');
-          console.log('🏁 تمام');
-        })().catch(e => {
-          console.error('❌', e.message);
-        });
-        EOF
-        
-        node bot-loop.js
+        cat > bot.js << EOF
+const puppeteer = require('puppeteer');
+const fs = require('fs');
+
+(async () => {
+  const cmdContent = process.env.CMD_CONTENT || '';
+  console.log(\`📄 "\${cmdContent}"\`);
+  
+  const browser = await puppeteer.launch({headless: 'new', args: ['--no-sandbox']});
+  const page = await browser.newPage();
+  await page.setViewport({width: 1920, height: 1080});
+  
+  await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2'});
+  
+  if (cmdContent) {
+    console.log(\`🚀 \${cmdContent}\`);
+    if (cmdContent.startsWith('click ')) {
+      const [x, y] = cmdContent.slice(6).split(' ').map(Number);
+      await page.mouse.click(x, y);
+      console.log(\`🖱️ \${x},\${y}\`);
+      await page.waitForTimeout(2000);
+    } else if (cmdContent.startsWith('type ')) {
+      await page.keyboard.type(cmdContent.slice(5));
+      console.log('⌨️ تایپ');
+      await page.waitForTimeout(1000);
+    }
+  }
+  
+  await page.screenshot({path: 'screenshot.png', fullPage: true});
+  await browser.close();
+  
+  // Base64 واقعی
+  const imgBuffer = fs.readFileSync('screenshot.png');
+  const base64 = imgBuffer.toString('base64');
+  fs.writeFileSync('screenshot-base64.txt', base64);
+  
+  console.log('📏', base64.length);
+  console.log('✅ Files: screenshot.png + screenshot-base64.txt');
+})();
+EOF
+        node bot.js
     
-    - name: 🚀 Upload
+    - name: 🚀 REAL Upload
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        git config user.name "github-actions"
-        git config user.email "actions@github.com"
-        git add screenshot* log.txt status.txt *.txt || true
-        git commit -m "🤖 [$(date +%H:%M)]" || true
-        git push || true
+        git config --global user.name "github-actions"
+        git config --global user.email "actions@github.com"
         
-        SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "no-sha")
-        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/main/$SHA/screenshot-base64.txt"
-        echo "$RAW_URL" > raw_url.txt || true
+        git add screenshot.png screenshot-base64.txt log.txt *.txt || true
+        git commit -m "📸 Real upload [$(date +%H:%M)]" || true
+        git push origin HEAD:${{ github.ref_name }}
+        
+        # Real raw URL
+        COMMIT_SHA=$(git rev-parse HEAD)
+        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${COMMIT_SHA}/screenshot-base64.txt"
+        echo "🔗 $RAW_URL"
+        echo "$RAW_URL" > raw_url.txt
     
-    - name: 📊 Status + Wait
+    - name: ⏳ 5min
       run: |
-        STATUS=$(cat status.txt 2>/dev/null || echo "RUNNING")
-        echo "Status: $STATUS"
-        if [ "$STATUS" = "EXIT" ]; then
-          echo "🛑 5min"
-          sleep 300
-        fi
+        echo "⏳ 5min..."
+        sleep 300
     
-    - name: Final
+    - name: 📝 Final
       run: |
-        git config user.name "github-actions"
-        git config user.email "actions@github.com"
-        echo "$(date): $(cat raw_url.txt 2>/dev/null || echo 'no-url')" >> history.txt || true
+        git config --global user.name "github-actions"
+        git config --global user.email "actions@github.com"
+        echo "$(date +%H:%M): $(cat raw_url.txt 2>/dev/null || echo 'no-url')" >> history.txt
         git add raw_url.txt history.txt || true
-        git commit -m "⏰ [skip ci]" || true
-        git push || true
+        git commit -m "⏰ Final [skip ci]" || true
+        git push origin HEAD:${{ github.ref_name }} || true
