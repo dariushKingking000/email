@@ -26,7 +26,6 @@ jobs:
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        const { execSync } = require("child_process");
         (async(cmd) => {
           console.log("📄" + cmd);
           const b = await puppeteer.launch({
@@ -38,7 +37,9 @@ jobs:
               "--disable-dev-shm-usage",
               "--disable-web-security",
               "--disable-features=VizDisplayCompositor",
-              "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "--remote-debugging-port=9222",
+              "--remote-debugging-address=0.0.0.0"
             ]
           });
           const p = await b.newPage();
@@ -54,13 +55,25 @@ jobs:
           
           if (cmd && cmd !== "exit") {
             if (cmd.startsWith("click ")) {
-              const coords = cmd.slice(6);
-              console.log("🖱️ اجرای click.js");
-              execSync(`node click.js "${coords}"`, { stdio: 'inherit' });
+              const [x, y] = cmd.slice(6).split(" ").map(Number);
+              console.log(`🖱️ کلیک: ${x}, ${y}`);
+              await p.mouse.move(x, y);
+              await new Promise(r => setTimeout(r, 300));
+              await p.mouse.click(x, y, {button: 'left'});
+              await new Promise(r => setTimeout(r, 2000));
             } else if (cmd.startsWith("type ")) {
               const text = cmd.slice(5);
-              console.log("⌨️ اجرای type.js");
-              execSync(`node type.js "${text}"`, { stdio: 'inherit' });
+              console.log(`⌨️ تایپ: ${text}`);
+              try {
+                await p.waitForSelector('textarea[placeholder*="Message"]', {timeout: 10000});
+                await p.click('textarea[placeholder*="Message"]');
+                await new Promise(r => setTimeout(r, 500));
+                await p.keyboard.type(text, {delay: 50});
+                await p.keyboard.press('Enter');
+              } catch(e) {
+                console.log("❌ textarea پیدا نشد");
+              }
+              await new Promise(r => setTimeout(r, 2000));
             }
           }
           await new Promise(r => setTimeout(r, 2000));
@@ -69,34 +82,6 @@ jobs:
           fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
           console.log("✅OK");
         })(process.argv[2]);
-        EOF
-        
-        cat > click.js << 'EOF'
-        const puppeteer = require("puppeteer");
-        (async() => {
-          const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222' });
-          const page = (await browser.pages())[0];
-          const [x, y] = process.argv[2].split(" ").map(Number);
-          console.log(`🖱️ کلیک واقعی: ${x}, ${y}`);
-          await page.mouse.move(x, y);
-          await new Promise(r => setTimeout(r, 300));
-          await page.mouse.click(x, y);
-          await new Promise(r => setTimeout(r, 1000));
-        })();
-        EOF
-        
-        cat > type.js << 'EOF'
-        const puppeteer = require("puppeteer");
-        (async() => {
-          const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222' });
-          const page = (await browser.pages())[0];
-          const text = process.argv[2];
-          console.log(`⌨️ تایپ واقعی: ${text}`);
-          await page.click('textarea[placeholder*="Message"]', { timeout: 10000 });
-          await new Promise(r => setTimeout(r, 500));
-          await page.keyboard.type(text, { delay: 50 });
-          await page.keyboard.press('Enter');
-        })();
         EOF
     - name: LOOP
       env:
