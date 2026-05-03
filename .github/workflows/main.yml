@@ -27,63 +27,60 @@ jobs:
         const puppeteer = require("puppeteer");
         const fs = require("fs");
         
+        // Global browser state
         let browser = null;
         let page = null;
         
-        async function ensureBrowser() {
-          try {
-            console.log("🔍 چک مرورگر...");
-            if (browser && !browser.isClosed?.()) {
-              console.log("✅ مرورگر قبلی OK");
+        async function initOrReuseBrowser() {
+          console.log("🔍 Status check...");
+          
+          // اگر browser وجود داره و بازه
+          if (browser && page && !browser.isClosed?.()) {
+            console.log("✅ REUSE: همون مرورگر قبلی!");
+            try {
+              await page.bringToFront();
               return;
+            } catch(e) {
+              console.log("⚠️ Page خراب - new page");
+              page = await browser.newPage();
             }
-            
-            console.log("🌐 باز کردن مرورگر جدید...");
-            browser = await puppeteer.launch({
-              headless: "new",
-              args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            });
-            
-            page = await browser.newPage();
-            await page.setViewport({width: 1920, height: 1080});
-            await page.goto("https://chatgpt.com", { waitUntil: 'networkidle2' });
-            console.log("✅ مرورگر آماده");
-            
-          } catch(e) {
-            console.error("❌ خطای مرورگر:", e.message);
-            if (browser) await browser.close();
-            browser = null;
-            page = null;
-            throw e;
           }
+          
+          console.log("🌐 NEW BROWSER");
+          browser = await puppeteer.launch({
+            headless: "new",
+            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-background-timer-throttling"]
+          });
+          
+          page = await browser.newPage();
+          await page.setViewport({width: 1920, height: 1080});
+          await page.goto("https://chatgpt.com", { waitUntil: 'networkidle2', timeout: 30000 });
+          console.log("✅ Browser آماده");
         }
         
         (async(cmd) => {
-          console.log("📄 دستور:", cmd);
-          await ensureBrowser();
-          
           try {
-            if (cmd && cmd !== "exit") {
-              if (cmd.startsWith("click ")) {
-                const coords = cmd.slice(6).trim().split(" ");
-                const x = parseInt(coords[0]);
-                const y = parseInt(coords[1]);
-                console.log(`🖱️ کلیک: ${x}, ${y}`);
-                await page.mouse.click(x, y);
-                await new Promise(r => setTimeout(r, 2000));
-              }
+            console.log("📄 Cmd:", cmd);
+            await initOrReuseBrowser();
+            
+            if (cmd?.startsWith("click ")) {
+              const [x, y] = cmd.slice(6).trim().split(" ").map(Number);
+              console.log(`🖱️ Click ${x},${y}`);
+              await page.mouse.click(x, y);
+              await new Promise(r => setTimeout(r, 2500));
             }
             
             await page.screenshot({path: "screenshot.png", fullPage: true});
             fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-            console.log("✅ اسکرین‌شات OK - EXIT 0");
+            console.log("✅ Screenshot OK | Exit 0");
             process.exit(0);
             
           } catch(e) {
-            console.error("❌ خطا:", e.message);
+            console.error("💥 Error:", e.message);
+            if (browser) await browser.close();
             process.exit(1);
           }
-        })(process.argv[2]);
+        })(process.argv[2] || '');
         EOF
     - name: LOOP
       env:
@@ -91,49 +88,47 @@ jobs:
       run: |
         git config user.name bot
         git config user.email bot@github.com
+        git config advice.addIgnoredFile false
         
         rm -f last_command.txt
         
         COUNTER=0
         while true; do
-          git pull origin main
+          git pull origin main || true
           
           if [ -f command.txt ]; then
-            CONTENT=$(cat command.txt | tr -d '\r\n')
+            CONTENT=$(cat command.txt | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
             
-            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
+            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt 2>/dev/null || echo '')" != "$CONTENT" ]; then
               if [ "$CONTENT" != "exit" ]; then
-                echo "🆕 دستور جدید: $CONTENT"
+                echo "🆕 NEW: $CONTENT"
                 node bot.js "$CONTENT"
                 RC=$?
-                echo "📊 Exit code: $RC"
+                echo "📊 RC: $RC"
                 if [ $RC -eq 0 ]; then
-                  git add screenshot.png screenshot-base64.txt .gitignore || true
-                  git commit -m "📸 $CONTENT" || true
-                  git push || true
+                  git add -f screenshot.png screenshot-base64.txt || true
+                  if git diff --staged --quiet; then
+                    echo "ℹ️ No changes"
+                  else
+                    git commit -m "📸 $CONTENT" || true
+                    git push || true
+                  fi
                   echo "$CONTENT" > last_command.txt
                   COUNTER=0
-                else
-                  echo "❌ bot شکست - skip commit"
                 fi
               else
-                echo "🛑 خروج"
+                echo "🛑 EXIT"
                 exit 0
               fi
             else
-              echo "🔄 دستور تکراری: $CONTENT"
+              echo "🔄 Duplicate: $CONTENT"
               COUNTER=$((COUNTER + 1))
             fi
           else
-            echo "⏳ منتظر command.txt..."
+            echo "⏳ Wait..."
             COUNTER=$((COUNTER + 1))
           fi
           
-          if [ $COUNTER -ge 30 ]; then
-            echo "🔄 ریست کانتر"
-            rm -f last_command.txt
-            COUNTER=0
-          fi
-          
+          [ $COUNTER -ge 30 ] && { echo "🔄 Reset"; rm -f last_command.txt; COUNTER=0; }
           sleep 60
         done
