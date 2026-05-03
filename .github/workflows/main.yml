@@ -21,31 +21,53 @@ jobs:
         screenshot-base64.txt
         command.txt
         last_command.txt
+        browser.pid
         EOF
         
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
+        const { spawn } = require('child_process');
         
         let browser = null;
         let page = null;
         
+        // Kill previous browser if exists
+        if (fs.existsSync('browser.pid')) {
+          const pid = fs.readFileSync('browser.pid', 'utf8');
+          try {
+            process.kill(pid, 'SIGTERM');
+          } catch(e) {}
+          fs.unlinkSync('browser.pid');
+        }
+        
         async function ensureBrowser() {
           try {
-            if (!browser || (browser.isClosed && browser.isClosed())) {
-              console.log("🌐 باز کردن مرورگر جدید...");
-              browser = await puppeteer.launch({
-                headless: "new",
-                args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-              });
-              page = await browser.newPage();
-              await page.setViewport({width: 1920, height: 1080});
-              await page.goto("https://chatgpt.com", { waitUntil: 'networkidle2' });
-              console.log("✅ مرورگر آماده");
+            console.log("🔍 چک مرورگر...");
+            if (browser && !browser.isClosed?.()) {
+              console.log("✅ مرورگر قبلی OK");
+              return;
             }
+            
+            console.log("🌐 باز کردن مرورگر جدید...");
+            browser = await puppeteer.launch({
+              headless: "new",
+              args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--single-process"]
+            });
+            
+            // Save PID
+            const pid = browser.process().pid;
+            fs.writeFileSync('browser.pid', pid.toString());
+            
+            page = await browser.newPage();
+            await page.setViewport({width: 1920, height: 1080});
+            await page.goto("https://chatgpt.com", { waitUntil: 'networkidle2' });
+            console.log("✅ مرورگر آماده");
+            
           } catch(e) {
             console.error("❌ خطای مرورگر:", e.message);
             if (browser) await browser.close();
+            fs.unlinkSync('browser.pid');
             browser = null;
             page = null;
             throw e;
@@ -86,7 +108,7 @@ jobs:
         git config user.name bot
         git config user.email bot@github.com
         
-        rm -f last_command.txt
+        rm -f last_command.txt browser.pid
         
         COUNTER=0
         while true; do
@@ -102,13 +124,13 @@ jobs:
                 RC=$?
                 echo "📊 Exit code: $RC"
                 if [ $RC -eq 0 ]; then
-                  git add screenshot.png screenshot-base64.txt .gitignore
+                  git add screenshot.png screenshot-base64.txt browser.pid .gitignore
                   git commit -m "📸 $CONTENT" || true
                   git push || true
                   echo "$CONTENT" > last_command.txt
                   COUNTER=0
                 else
-                  echo "❌ bot شکست خورد - skip commit"
+                  echo "❌ bot شکست - skip commit"
                 fi
               else
                 echo "🛑 خروج"
@@ -125,7 +147,7 @@ jobs:
           
           if [ $COUNTER -ge 30 ]; then
             echo "🔄 ریست کانتر"
-            rm -f last_command.txt
+            rm -f last_command.txt browser.pid
             COUNTER=0
           fi
           
