@@ -80,7 +80,6 @@ const fs = require('fs');
   await page.screenshot({path: 'screenshot.png', fullPage: true});
   await browser.close();
   
-  // Base64 واقعی
   const imgBuffer = fs.readFileSync('screenshot.png');
   const base64 = imgBuffer.toString('base64');
   fs.writeFileSync('screenshot-base64.txt', base64);
@@ -97,12 +96,10 @@ EOF
       run: |
         git config --global user.name "github-actions"
         git config --global user.email "actions@github.com"
-        
         git add screenshot.png screenshot-base64.txt log.txt *.txt || true
         git commit -m "📸 Real upload [$(date +%H:%M)]" || true
         git push origin HEAD:${{ github.ref_name }}
         
-        # Real raw URL
         COMMIT_SHA=$(git rev-parse HEAD)
         RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${COMMIT_SHA}/screenshot-base64.txt"
         echo "🔗 $RAW_URL"
