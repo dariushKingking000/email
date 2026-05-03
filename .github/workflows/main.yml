@@ -1,8 +1,3 @@
-
-
-
-
-
 name: Screenshot Bot
 on: push
 permissions:
@@ -42,20 +37,35 @@ jobs:
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        (async(cmd) => {
+        const path = require("path");
+        
+        let browser = null;
+        let page = null;
+        
+        async function initBrowser() {
+          if (!browser) {
+            console.log("🚀 راه‌اندازی مرورگر...");
+            browser = await puppeteer.launch({
+              headless: false,
+              args: [
+                '--no-sandbox', 
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-web-security'
+              ]
+            });
+            page = await browser.newPage();
+            await page.setViewport({ width: 1920, height: 1080 });
+            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
+            await new Promise(r => setTimeout(r, 5000));
+            console.log("✅ مرورگر آماده");
+          }
+          return page;
+        }
+        
+        async function executeCommand(cmd) {
           console.log("📄" + cmd);
-          const b = await puppeteer.launch({
-            headless: false,
-            args: [
-              '--no-sandbox', 
-              '--disable-dev-shm-usage',
-              '--disable-gpu'
-            ]
-          });
-          const p = await b.newPage();
-          await p.setViewport({ width: 1920, height: 1080 });
-          await p.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-          await new Promise(r => setTimeout(r, 5000));
+          const p = await initBrowser();
           
           if (cmd && cmd !== "exit") {
             if (cmd.startsWith("click ")) {
@@ -72,21 +82,33 @@ jobs:
               console.log(`⌨️ تایپ: ${text}`);
               await p.click('textarea');
               await new Promise(r => setTimeout(r, 500));
-              for(let char of text) {
-                await p.keyboard.down(char);
-                await new Promise(r => setTimeout(r, 80));
-                await p.keyboard.up(char);
-              }
+              await p.keyboard.type(text, { delay: 80 });
               console.log(`✅ تایپ شد: ${text}`);
             }
           }
           
-          await new Promise(r => setTimeout(r, 3000));
+          await new Promise(r => setTimeout(r, 2000));
           await p.screenshot({path: "screenshot.png", fullPage: true});
-          await b.close();
           fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
           console.log("✅OK");
-        })(process.argv[2]);
+        }
+        
+        async function cleanup() {
+          if (browser) {
+            await browser.close();
+            browser = null;
+            page = null;
+          }
+        }
+        
+        (async() => {
+          try {
+            await executeCommand(process.argv[2]);
+          } catch (e) {
+            console.error("❌ خطا:", e.message);
+          }
+          // browser رو نبند - برای دفعه بعد نگه دار
+        })();
         EOF
     
     - name: LOOP
@@ -99,6 +121,11 @@ jobs:
         rm -f last_command.txt
         
         COUNTER=0
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1920x1080x24 -ac -noreset &
+        XVFB_PID=$!
+        sleep 3
+        
         while true; do
           git pull origin main
           
@@ -108,11 +135,7 @@ jobs:
             if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
               if [ "$CONTENT" != "exit" ]; then
                 echo "🆕 دستور جدید: $CONTENT"
-                export DISPLAY=:99
-                Xvfb :99 -screen 0 1920x1080x24 -ac -noreset &
-                sleep 3
                 node bot.js "$CONTENT"
-                pkill Xvfb || true
                 git add screenshot* .gitignore
                 git commit -m "📸$CONTENT" || true
                 git push || true
@@ -121,6 +144,7 @@ jobs:
                 COUNTER=0
               else
                 echo "🛑 خروج"
+                kill $XVFB_PID || true
                 exit 0
               fi
             else
