@@ -1,19 +1,15 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
-const process = require('process');
 
-let url = 'https://chatgpt.com';
+// همیشه chatgpt.com - command.txt فقط لاگ
+const url = 'https://chatgpt.com';
 
-// از command.txt یا environment
-const cmdContent = process.env.CMD_CONTENT || '';
-if (cmdContent) {
-  url = cmdContent.startsWith('http') ? cmdContent : `https://${cmdContent}`;
-  console.log(`🔗 از command.txt: ${url}`);
-}
-
+// لاگ command.txt
+const cmdContent = process.env.CMD_CONTENT || 'خالی';
+console.log(`📄 command.txt: "${cmdContent}"`);
 console.log(`📸 میره: ${url}`);
 
-fs.writeFileSync('config.json', JSON.stringify({url, timestamp: new Date().toISOString()}, null, 2));
+fs.writeFileSync('config.json', JSON.stringify({url, cmd: cmdContent, timestamp: new Date().toISOString()}, null, 2));
 
 (async () => {
   const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
