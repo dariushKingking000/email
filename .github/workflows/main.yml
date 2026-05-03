@@ -25,25 +25,55 @@ jobs:
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        (async(cmd) => {
-          console.log("📄" + cmd);
+
+        (async (cmd) => {
+          console.log("📄 Command: " + cmd);
+
           const b = await puppeteer.launch({
             headless: "new",
-            args: ["--no-sandbox"]
+            args: [
+              "--no-sandbox",
+              "--disable-setuid-sandbox",
+              "--disable-dev-shm-usage",
+              "--disable-gpu",
+              "--no-zygote",
+              "--no-first-run",
+              "--no-default-browser-check"
+            ]
           });
+
           const p = await b.newPage();
-          await p.setViewport({width: 1920, height: 1080});
-          await p.goto("https://chatgpt.com");
+          await p.setViewport({ width: 1920, height: 1080 });
+
+          await p.goto("https://chatgpt.com", { waitUntil: "networkidle2" });
+
           if (cmd && cmd !== "exit") {
+
+            // CLICK
             if (cmd.startsWith("click ")) {
               const [x, y] = cmd.slice(6).split(" ").map(Number);
+              console.log(`🖱 Clicking at ${x},${y}`);
               await p.mouse.click(x, y);
-              await new Promise(r => setTimeout(r, 2000));
+              await new Promise(r => setTimeout(r, 1500));
+            }
+
+            // TYPE
+            if (cmd.startsWith("type ")) {
+              const text = cmd.slice(5);
+              console.log("⌨ Typing:", text);
+              await p.keyboard.type(text, { delay: 80 });
+              await new Promise(r => setTimeout(r, 1500));
             }
           }
-          await p.screenshot({path: "screenshot.png", fullPage: true});
+
+          await p.screenshot({ path: "screenshot.png", fullPage: true });
+
           await b.close();
-          fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
+
+          fs.writeFileSync("screenshot-base64.txt",
+            fs.readFileSync("screenshot.png").toString("base64")
+          );
+
           console.log("✅OK");
         })(process.argv[2]);
         EOF
@@ -66,6 +96,7 @@ jobs:
           fi
           sleep 60
         done
+
 
 
 
