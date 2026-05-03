@@ -19,15 +19,13 @@ jobs:
         node-version: 20
     
     - name: Install
-      run: |
-        npm init -y
-        npm install puppeteer@latest
+      run: npm init -y && npm i puppeteer@latest
     
-    - name: Setup Persistent Browser
+    - name: Setup
       run: |
         cat > .gitignore << EOF
         node_modules/
-        bot.js browser.pid
+        bot.js
         package.json
         package-lock.json
         screenshot.png
@@ -39,63 +37,48 @@ jobs:
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        const { spawn } = require("child_process");
-        
-        const PID_FILE = "browser.pid";
-        const WS_FILE = "browser-ws.json";
-        
-        async function getBrowser() {
-          if (fs.existsSync(PID_FILE)) {
-            const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8'));
-            try {
-              process.kill(pid, 0); // چک زنده بودن
-              if (fs.existsSync(WS_FILE)) {
-                const wsEndpoint = JSON.parse(fs.readFileSync(WS_FILE, 'utf8')).webSocketDebuggerUrl;
-                return await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
-              }
-            } catch(e) {
-              console.log("🔄 Browser مرده، restart...");
-              fs.unlinkSync(PID_FILE);
-            }
-          }
-          
-          console.log("🚀 Browser جدید...");
-          const browser = await puppeteer.launch({
-            headless: false,
-            args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--remote-debugging-port=9222', '--remote-debugging-address=0.0.0.0']
-          });
-          
-          fs.writeFileSync(PID_FILE, browser.process().pid.toString());
-          const ws = await browser.wsEndpoint();
-          fs.writeFileSync(WS_FILE, JSON.stringify({webSocketDebuggerUrl: ws}));
-          
-          const page = await browser.newPage();
-          await page.setViewport({ width: 1920, height: 1080 });
-          await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-          await new Promise(r => setTimeout(r, 5000));
-          return browser;
-        }
-        
         (async(cmd) => {
           console.log("📄" + cmd);
-          const browser = await getBrowser();
-          const pages = await browser.pages();
-          const p = pages[0];
+          const b = await puppeteer.launch({
+            headless: false,
+            args: [
+              '--no-sandbox', 
+              '--disable-dev-shm-usage',
+              '--disable-gpu'
+            ]
+          });
+          const p = await b.newPage();
+          await p.setViewport({ width: 1920, height: 1080 });
+          await p.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
+          await new Promise(r => setTimeout(r, 5000));
           
           if (cmd && cmd !== "exit") {
             if (cmd.startsWith("click ")) {
               const [x, y] = cmd.slice(6).split(" ").map(Number);
-              await p.mouse.click(x, y);
-              console.log(`🖱️ Clicked (${x},${y})`);
+              console.log(`🖱️ کلیک: ${x} ${y}`);
+              await p.mouse.move(x, y, { steps: 10 });
+              await new Promise(r => setTimeout(r, 200));
+              await p.mouse.down({ button: 'left' });
+              await new Promise(r => setTimeout(r, 50));
+              await p.mouse.up({ button: 'left' });
+              console.log(`✅ کلیک شد (${x},${y})`);
             } else if (cmd.startsWith("type ")) {
               const text = cmd.slice(5);
-              await p.evaluate(() => document.querySelector('textarea')?.focus());
-              await p.keyboard.type(text, {delay: 100});
-              console.log(`⌨️ Typed: ${text}`);
+              console.log(`⌨️ تایپ: ${text}`);
+              await p.click('textarea');
+              await new Promise(r => setTimeout(r, 500));
+              for(let char of text) {
+                await p.keyboard.down(char);
+                await new Promise(r => setTimeout(r, 80));
+                await p.keyboard.up(char);
+              }
+              console.log(`✅ تایپ شد: ${text}`);
             }
           }
-          await new Promise(r => setTimeout(r, 2000));
+          
+          await new Promise(r => setTimeout(r, 3000));
           await p.screenshot({path: "screenshot.png", fullPage: true});
+          await b.close();
           fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
           console.log("✅OK");
         })(process.argv[2]);
@@ -108,12 +91,7 @@ jobs:
         git config user.name bot
         git config user.email bot@github.com
         
-        export DISPLAY=:99
-        Xvfb :99 -screen 0 1920x1080x24 -ac -noreset &
-        export DISPLAY=:99
-        sleep 3
-        
-        rm -f last_command.txt browser.pid browser-ws.json
+        rm -f last_command.txt
         
         COUNTER=0
         while true; do
@@ -125,8 +103,12 @@ jobs:
             if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
               if [ "$CONTENT" != "exit" ]; then
                 echo "🆕 دستور جدید: $CONTENT"
+                export DISPLAY=:99
+                Xvfb :99 -screen 0 1920x1080x24 -ac -noreset &
+                sleep 3
                 node bot.js "$CONTENT"
-                git add screenshot* .gitignore browser.*
+                pkill Xvfb || true
+                git add screenshot* .gitignore
                 git commit -m "📸$CONTENT" || true
                 git push || true
                 
@@ -134,8 +116,6 @@ jobs:
                 COUNTER=0
               else
                 echo "🛑 خروج"
-                pkill -f puppeteer || true
-                rm -f browser.pid browser-ws.json
                 exit 0
               fi
             else
@@ -149,7 +129,7 @@ jobs:
           
           if [ $COUNTER -ge 30 ]; then
             echo "🔄 ریست"
-            rm -f last_command.txt browser.pid browser-ws.json
+            rm -f last_command.txt
             COUNTER=0
           fi
           
