@@ -11,17 +11,18 @@ jobs:
       run: npm init -y && npm install puppeteer
     - name: Setup Files
       run: |
+        # --- اصلاح شده .gitignore ---
+        # فقط فایل‌هایی که نباید در سورس کنترل باشند اضافه شده‌اند
         cat > .gitignore << EOF
         node_modules/
-        bot.js
-        package.json
-        package-lock.json
         screenshot.png
         screenshot-base64.txt
         command.txt
         EOF
+        # --- پایان اصلاح شده .gitignore ---
 
         # --- نسخه اصلاح شده bot.js ---
+        # این فایل هر بار در گیت‌هاب اکشن ساخته و نوشته می‌شود
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
@@ -60,9 +61,7 @@ jobs:
               const [x, y] = cmd.slice(6).split(" ").map(Number);
               console.log(`🖱 Clicking at ${x},${y}`);
               await page.mouse.click(x, y);
-              // استفاده از page.waitForTimeout که باید در نسخه های جدیدتر وجود داشته باشد
-              // در غیر این صورت از setTimeout استفاده می کنیم
-              // await page.waitForTimeout(1500); // این خط خطا میداد
+              // استفاده از setTimeout با Promise برای ایجاد تأخیر
               await new Promise(resolve => setTimeout(resolve, 1500)); // جایگزین صحیح
             }
 
@@ -70,7 +69,7 @@ jobs:
               const text = cmd.slice(5);
               console.log("⌨ Typing:", text);
               await page.keyboard.type(text, { delay: 80 });
-              // await page.waitForTimeout(1500); // این خط خطا میداد
+              // استفاده از setTimeout با Promise برای ایجاد تأخیر
               await new Promise(resolve => setTimeout(resolve, 1500)); // جایگزین صحیح
             }
           }
@@ -101,10 +100,21 @@ jobs:
           if [ -f command.txt ]; then
             CONTENT=$(cat command.txt)
             if [ "$CONTENT" != "exit" ]; then
+              echo "Running command: $CONTENT"
               node bot.js "$CONTENT"
+
+              # --- اصلاح شده بخش add و commit ---
+              # فقط فایل‌های تولید شده و فایل‌های پیکربندی که نباید ignore شوند اضافه می‌شوند
               git add screenshot* .gitignore bot.js package.json package-lock.json
-              git commit -m "📸 Bot action: $CONTENT" || echo "No changes to commit"
-              git push || echo "Failed to push"
+              # بررسی وضعیت برای جلوگیری از commit خالی
+              if ! git diff --cached --exit-code; then
+                git commit -m "📸 Bot action: $CONTENT" || echo "No changes to commit"
+                git push || echo "Failed to push"
+              else
+                echo "No changes to commit after bot action."
+              fi
+              # --- پایان اصلاح شده ---
+
             else
               echo "Exit command received. Stopping loop."
               break
