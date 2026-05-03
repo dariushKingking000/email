@@ -21,7 +21,6 @@ jobs:
         screenshot-base64.txt
         command.txt
         last_command.txt
-        browser_state.json
         EOF
         
         cat > bot.js << 'EOF'
@@ -31,52 +30,56 @@ jobs:
         let browser = null;
         let page = null;
         
-        async function initBrowser() {
-          if (!browser) {
-            browser = await puppeteer.launch({
-              headless: "new",
-              args: ["--no-sandbox"]
-            });
-            page = await browser.newPage();
-            await page.setViewport({width: 1920, height: 1080});
-            await page.goto("https://chatgpt.com");
-          }
-        }
-        
-        async function executeCmd(cmd) {
-          console.log("📄" + cmd);
-          await initBrowser();
-          
-          if (cmd && cmd !== "exit") {
-            if (cmd.startsWith("click ")) {
-              const [x, y] = cmd.slice(6).split(" ").map(Number);
-              await page.mouse.click(x, y);
-              await new Promise(r => setTimeout(r, 2000));
+        async function ensureBrowser() {
+          try {
+            if (!browser || browser.isClosed()) {
+              console.log("🌐 باز کردن مرورگر جدید...");
+              browser = await puppeteer.launch({
+                headless: "new",
+                args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+              });
+              page = await browser.newPage();
+              await page.setViewport({width: 1920, height: 1080});
+              await page.goto("https://chatgpt.com", { waitUntil: 'networkidle2' });
+              console.log("✅ مرورگر آماده");
             }
-          }
-          
-          await page.screenshot({path: "screenshot.png", fullPage: true});
-          fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-          console.log("✅OK");
-        }
-        
-        async function cleanup() {
-          if (browser) {
-            await browser.close();
+          } catch(e) {
+            console.error("❌ خطای مرورگر:", e.message);
             browser = null;
             page = null;
+            throw e;
           }
         }
-        
-        process.on('SIGINT', cleanup);
-        process.on('SIGTERM', cleanup);
         
         (async(cmd) => {
           try {
-            await executeCmd(cmd);
+            console.log("📄 دستور:", cmd);
+            await ensureBrowser();
+            
+            if (cmd && cmd !== "exit") {
+              if (cmd.startsWith("click ")) {
+                const coords = cmd.slice(6).trim().split(" ");
+                const x = parseInt(coords[0]);
+                const y = parseInt(coords[1]);
+                console.log(`🖱️ کلیک در مختصات: ${x}, ${y}`);
+                
+                await page.mouse.click(x, y);
+                await page.waitForTimeout(3000);
+              }
+            }
+            
+            await page.screenshot({path: "screenshot.png", fullPage: true});
+            const base64 = fs.readFileSync("screenshot.png").toString("base64");
+            fs.writeFileSync("screenshot-base64.txt", base64);
+            console.log("✅ اسکرین‌شات ذخیره شد");
+            
           } catch(e) {
-            console.error("❌ Error:", e.message);
-            await cleanup();
+            console.error("❌ خطا:", e.message);
+            if (browser) {
+              await browser.close();
+              browser = null;
+              page = null;
+            }
           }
         })(process.argv[2]);
         EOF
@@ -87,26 +90,23 @@ jobs:
         git config user.name bot
         git config user.email bot@github.com
         
-        # فایل دستور قبلی رو پاک کن
-        rm -f last_command.txt browser_state.json
+        rm -f last_command.txt
         
         COUNTER=0
         while true; do
           git pull origin main
           
           if [ -f command.txt ]; then
-            CONTENT=$(cat command.txt)
+            CONTENT=$(cat command.txt | tr -d '\r\n')
             
-            # دستور قبلی رو چک کن
             if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
               if [ "$CONTENT" != "exit" ]; then
                 echo "🆕 دستور جدید: $CONTENT"
-                node bot.js "$CONTENT"
-                git add screenshot* .gitignore browser_state.json || true
-                git commit -m "📸$CONTENT" || true
+                node bot.js "$CONTENT" || echo "❌ خطا در اجرای bot"
+                git add screenshot* .gitignore || true
+                git commit -m "📸 $CONTENT" || true
                 git push || true
                 
-                # دستور فعلی رو ذخیره کن
                 echo "$CONTENT" > last_command.txt
                 COUNTER=0
               else
@@ -122,10 +122,9 @@ jobs:
             COUNTER=$((COUNTER + 1))
           fi
           
-          # بعد 30 بار تکرار (30 دقیقه) ریست کن
           if [ $COUNTER -ge 30 ]; then
             echo "🔄 ریست کانتر"
-            rm -f last_command.txt browser_state.json
+            rm -f last_command.txt
             COUNTER=0
           fi
           
