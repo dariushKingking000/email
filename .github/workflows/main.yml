@@ -1,4 +1,4 @@
-name: Screenshot Bot (Wait + Commands)
+name: Screenshot Bot (Loop + Exit)
 on: [push]
 permissions:
   contents: write
@@ -12,74 +12,62 @@ jobs:
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: ⏳ Wait for command.txt (30x 1min)
-      id: wait-cmd
-      run: |
-        FOUND=0
-        for i in {1..30}; do
-          echo "🔍 $i/30 ($(date +%H:%M:%S))"
-          
-          # آپدیت repo
-          git fetch origin ${{ github.ref_name }}
-          git reset --hard origin/${{ github.ref_name }}
-          
-          if [ -f "command.txt" ]; then
-            CONTENT=$(cat command.txt | head -1 | xargs)
-            if [ -n "$CONTENT" ]; then
-              echo "✅ پیدا شد: '$CONTENT'"
-              echo "content=$CONTENT" >> $GITHUB_OUTPUT
-              FOUND=1
-              break
-            fi
-          fi
-          echo "⏳ خالی - 1 دقیقه صبر"
-          sleep 60
-        done
-        
-        if [ $FOUND -eq 0 ]; then
-          echo "content=" >> $GITHUB_OUTPUT
-          echo "❌ 30 دقیقه - خالی موند"
-        fi
-    
-    - name: 🤖 Execute + Screenshot
-      env:
-        CMD_CONTENT: ${{ steps.wait-cmd.outputs.content }}
+    - name: 🔄 LOOP - Wait/Exec/Repeat
+      id: bot-loop
       run: |
         npm init -y
         npm i puppeteer
         
-        cat > bot.js << 'EOF'
+        cat > bot-loop.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
+        const { execSync } = require('child_process');
         
-        const cmdContent = process.env.CMD_CONTENT || '';
-        console.log(`📄 Final command: "${cmdContent}"`);
-        
-        (async () => {
+        async function runBot() {
+          // آپدیت repo
+          execSync('git fetch origin main && git reset --hard origin/main', {stdio: 'inherit'});
+          
+          let cmdContent = '';
+          if (fs.existsSync('command.txt')) {
+            cmdContent = fs.readFileSync('command.txt', 'utf8').trim();
+          }
+          
+          console.log(`📄 Command: "${cmdContent}"`);
+          
+          // exit = 5min صبر
+          if (cmdContent === 'exit') {
+            console.log('🛑 EXIT mode');
+            fs.writeFileSync('status.txt', 'EXIT');
+            return false;
+          }
+          
+          // خالی = صبر
+          if (!cmdContent) {
+            console.log('⏳ خالی - 1min صبر');
+            return true; // ادامه loop
+          }
+          
+          // اجرا
+          console.log(`🚀 اجرای: ${cmdContent}`);
           const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
           await page.setViewport({width: 1920, height: 1080});
           
-          await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2', timeout: 30000});
+          await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2'});
           
-          if (cmdContent) {
-            console.log(`🚀 اجرای: ${cmdContent}`);
-            
-            if (cmdContent.startsWith('click ')) {
-              const coords = cmdContent.slice(6).split(' ');
-              if (coords.length === 2) {
-                const x = parseInt(coords[0]), y = parseInt(coords[1]);
-                await page.mouse.click(x, y);
-                console.log(`🖱️ کلیک: ${x},${y}`);
-                await new Promise(r => setTimeout(r, 2000));
-              }
-            } 
-            else if (cmdContent.startsWith('type ')) {
-              const text = cmdContent.slice(5);
-              await page.keyboard.type(text);
-              console.log(`⌨️ تایپ: "${text}"`);
-              await new Promise(r => setTimeout(r, 1000));
+          if (cmdContent.startsWith('click ')) {
+            const coords = cmdContent.slice(6).split(' ');
+            if (coords.length === 2) {
+              const x = parseInt(coords[0]), y = parseInt(coords[1]);
+              await page.mouse.click(x, y);
+              console.log(`🖱️ ${x},${y}`);
+              await new Promise(r => setTimeout(r, 2000));
             }
+          } else if (cmdContent.startsWith('type ')) {
+            const text = cmdContent.slice(5);
+            await page.keyboard.type(text);
+            console.log(`⌨️ "${text}"`);
+            await new Promise(r => setTimeout(r, 1000));
           }
           
           await page.screenshot({path: 'screenshot.png', fullPage: true});
@@ -87,37 +75,59 @@ jobs:
           
           const base64Image = fs.readFileSync('screenshot.png').toString('base64');
           fs.writeFileSync('screenshot-base64.txt', base64Image);
-          fs.writeFileSync('log.txt', `Command: ${cmdContent}`);
-          console.log('✅ تمام!');
-        })().catch(e => {
-          console.error('❌ خطا:', e.message);
-          process.exit(1);
-        });
+          fs.writeFileSync('log.txt', `Cmd: ${cmdContent}\nTime: ${new Date()}`);
+          console.log('✅ آپلود');
+          
+          return true; // ادامه loop
+        }
+        
+        let loop = true;
+        let count = 0;
+        while (loop && count < 30) {
+          count++;
+          console.log(`🔄 Loop ${count}/30`);
+          loop = await runBot();
+          if (loop) {
+            console.log('⏳ 1min صبر...');
+            await new Promise(r => setTimeout(r, 60000));
+          }
+        }
+        
+        fs.writeFileSync('status.txt', loop ? 'TIMEOUT' : 'EXIT');
+        console.log('🏁 Loop تمام');
         EOF
         
-        node bot.js
+        node bot-loop.js
     
-    - name: 🚀 Upload
+    - name: 🚀 Final Upload
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot* log.txt *.txt
-        git commit -m "🤖 [$(date +%Y%m%d-%H%M)]"
+        git add screenshot* log.txt status.txt *.txt
+        git commit -m "🤖 Loop [$(date +%H:%M)]"
         git push
         
-        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${{ github.sha }}/screenshot-base64.txt"
+        RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/main/$(git rev-parse --short HEAD)/screenshot-base64.txt"
         echo "$RAW_URL" > raw_url.txt
     
-    - name: ⏳ Wait 5m
-      run: sleep 300
+    - name: 📊 Status Check
+      run: |
+        STATUS=$(cat status.txt 2>/dev/null || echo "RUNNING")
+        echo "Status: $STATUS"
+        if [ "$STATUS" = "EXIT" ]; then
+          echo "🛑 5min صبر"
+          sleep 300
+        else
+          echo "🔄 ادامه..."
+        fi
     
-    - name: Final
+    - name: Final Commit
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        echo "$(date): $(cat raw_url.txt)" >> history.txt
+        echo "$(date): $(cat raw_url.txt 2>/dev/null || echo 'no-url')" >> history.txt
         git add raw_url.txt history.txt
-        git commit -m "⏰ [skip ci]" || true
+        git commit -m "⏰ Final [skip ci]" || true
         git push || true
