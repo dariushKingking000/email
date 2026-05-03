@@ -29,55 +29,49 @@ jobs:
         (async (cmd) => {
           console.log("📄 Command: " + cmd);
 
-          // راه‌اندازی مرورگر با تنظیمات طبیعی
           const browser = await puppeteer.launch({
-            headless: "new", // استفاده از headless mode جدید
-            defaultViewport: { width: 1280, height: 800 }, // تنظیم viewport
+            headless: "new",
+            defaultViewport: { width: 1280, height: 800 },
             args: [
               "--no-sandbox",
               "--disable-setuid-sandbox",
               "--disable-dev-shm-usage",
-              "--disable-blink-features=AutomationControlled", // کلیدی برای مخفی کردن اتوماسیون
-              "--start-maximized", // برای اینکه مرورگر بزرگ باز شود
-              "--disable-gpu" // برای اطمینان بیشتر در محیط‌های headless
+              "--disable-blink-features=AutomationControlled",
+              "--start-maximized",
+              "--disable-gpu"
             ]
           });
 
           const page = await browser.newPage();
 
-          // 👇 شبیه‌سازی مرورگر واقعی با تنظیم User-Agent و ویژگی webdriver
           await page.setUserAgent(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" // یک User-Agent رایج کروم
+            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
           );
           await page.evaluateOnNewDocument(() => {
-            // این خط مهمترین بخش برای عبور از تشخیص Cloudflare است
             Object.defineProperty(navigator, "webdriver", { get: () => false });
           });
 
           console.log("🌐 Visiting ChatGPT...");
-          // استفاده از networkidle2 برای اطمینان از بارگذاری کامل صفحه
           await page.goto("https://chatgpt.com", { waitUntil: "networkidle2" });
 
-          // اگر دستوری داده شده باشد
           if (cmd && cmd !== "exit") {
-            // CLICK
             if (cmd.startsWith("click ")) {
               const [x, y] = cmd.slice(6).split(" ").map(Number);
               console.log(`🖱 Clicking at ${x},${y}`);
               await page.mouse.click(x, y);
-              // کمی تأخیر برای پردازش کلیک
-              await page.waitForTimeout(1500);
+              // استفاده از page.waitForTimeout که باید در نسخه های جدیدتر وجود داشته باشد
+              // در غیر این صورت از setTimeout استفاده می کنیم
+              // await page.waitForTimeout(1500); // این خط خطا میداد
+              await new Promise(resolve => setTimeout(resolve, 1500)); // جایگزین صحیح
             }
 
-            // TYPE
             if (cmd.startsWith("type ")) {
               const text = cmd.slice(5);
               console.log("⌨ Typing:", text);
-              // تأخیر بین حروف برای طبیعی‌تر شدن تایپ
               await page.keyboard.type(text, { delay: 80 });
-              // کمی تأخیر برای پردازش تایپ
-              await page.waitForTimeout(1500);
+              // await page.waitForTimeout(1500); // این خط خطا میداد
+              await new Promise(resolve => setTimeout(resolve, 1500)); // جایگزین صحیح
             }
           }
 
@@ -87,7 +81,6 @@ jobs:
           await browser.close();
           console.log("🔒 Closing browser and saving screenshot...");
 
-          // ذخیره اسکرین‌شات به صورت base64
           fs.writeFileSync("screenshot-base64.txt",
             fs.readFileSync("screenshot.png").toString("base64")
           );
@@ -108,20 +101,18 @@ jobs:
           if [ -f command.txt ]; then
             CONTENT=$(cat command.txt)
             if [ "$CONTENT" != "exit" ]; then
-              # اجرای اسکریپت بات با دستور خوانده شده
               node bot.js "$CONTENT"
-              # اضافه کردن فایل‌های جدید و کامیت کردن
               git add screenshot* .gitignore bot.js package.json package-lock.json
               git commit -m "📸 Bot action: $CONTENT" || echo "No changes to commit"
               git push || echo "Failed to push"
             else
               echo "Exit command received. Stopping loop."
-              break # خروج از حلقه در صورت دریافت دستور exit
+              break
             fi
           else
             echo "No command.txt found. Waiting..."
           fi
-          # انتظار برای 60 ثانیه قبل از تکرار حلقه
           sleep 60
         done
+
 
