@@ -1,3 +1,8 @@
+
+
+
+
+
 name: Screenshot Bot
 on: push
 permissions:
@@ -32,93 +37,53 @@ jobs:
         screenshot-base64.txt
         command.txt
         last_command.txt
-        browser_pid.txt
         EOF
         
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        const { spawn } = require("child_process");
-
-        let browserProcess = null;
-        let page = null;
-
-        async function getExistingBrowser() {
-          try {
-            if (fs.existsSync("browser_pid.txt")) {
-              const pid = fs.readFileSync("browser_pid.txt", "utf8").trim();
-              // چک کن پروسه هنوز زنده است
-              spawn("kill", ["-0", pid], { stdio: "ignore" });
-              console.log("🔄 مرورگر قبلی پیدا شد");
-              return true;
-            }
-          } catch (e) {
-            console.log("❌ مرورگر قبلی مرده");
-          }
-          return false;
-        }
-
         (async(cmd) => {
           console.log("📄" + cmd);
-          
-          const existing = await getExistingBrowser();
-          
-          if (!existing) {
-            console.log("🚀 مرورگر جدید");
-            browserProcess = spawn("puppeteer", ["browser"], {
-              stdio: "ignore",
-              detached: true
-            });
-            fs.writeFileSync("browser_pid.txt", browserProcess.pid.toString());
-            
-            const b = await puppeteer.launch({
-              headless: false,
-              args: [
-                '--no-sandbox', 
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--remote-debugging-port=9222'
-              ],
-              executablePath: require('puppeteer').executablePath()
-            });
-            page = await b.newPage();
-            await page.setViewport({ width: 1920, height: 1080 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            await new Promise(r => setTimeout(r, 5000));
-          } else {
-            console.log("🔗 اتصال به مرورگر قبلی");
-            const b = await puppeteer.connect({
-              browserURL: 'http://127.0.0.1:9222'
-            });
-            page = (await b.pages())[0];
-          }
+          const b = await puppeteer.launch({
+            headless: false,
+            args: [
+              '--no-sandbox', 
+              '--disable-dev-shm-usage',
+              '--disable-gpu'
+            ]
+          });
+          const p = await b.newPage();
+          await p.setViewport({ width: 1920, height: 1080 });
+          await p.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
+          await new Promise(r => setTimeout(r, 5000));
           
           if (cmd && cmd !== "exit") {
             if (cmd.startsWith("click ")) {
               const [x, y] = cmd.slice(6).split(" ").map(Number);
               console.log(`🖱️ کلیک: ${x} ${y}`);
-              await page.mouse.move(x, y, { steps: 10 });
+              await p.mouse.move(x, y, { steps: 10 });
               await new Promise(r => setTimeout(r, 200));
-              await page.mouse.down({ button: 'left' });
+              await p.mouse.down({ button: 'left' });
               await new Promise(r => setTimeout(r, 50));
-              await page.mouse.up({ button: 'left' });
+              await p.mouse.up({ button: 'left' });
               console.log(`✅ کلیک شد (${x},${y})`);
             } else if (cmd.startsWith("type ")) {
               const text = cmd.slice(5);
               console.log(`⌨️ تایپ: ${text}`);
-              await page.click('textarea');
+              await p.click('textarea');
               await new Promise(r => setTimeout(r, 500));
               for(let char of text) {
-                await page.keyboard.down(char);
+                await p.keyboard.down(char);
                 await new Promise(r => setTimeout(r, 80));
-                await page.keyboard.up(char);
+                await p.keyboard.up(char);
               }
               console.log(`✅ تایپ شد: ${text}`);
             }
           }
           
           await new Promise(r => setTimeout(r, 3000));
-          await page.screenshot({path: "screenshot.png", fullPage: true});
+          await p.screenshot({path: "screenshot.png", fullPage: true});
+          await b.close();
           fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
           console.log("✅OK");
         })(process.argv[2]);
@@ -131,12 +96,7 @@ jobs:
         git config user.name bot
         git config user.email bot@github.com
         
-        rm -f last_command.txt browser_pid.txt
-        
-        export DISPLAY=:99
-        Xvfb :99 -screen 0 1920x1080x24 -ac -noreset &
-        XVFB_PID=$!
-        sleep 3
+        rm -f last_command.txt
         
         COUNTER=0
         while true; do
@@ -148,8 +108,12 @@ jobs:
             if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
               if [ "$CONTENT" != "exit" ]; then
                 echo "🆕 دستور جدید: $CONTENT"
+                export DISPLAY=:99
+                Xvfb :99 -screen 0 1920x1080x24 -ac -noreset &
+                sleep 3
                 node bot.js "$CONTENT"
-                git add screenshot* .gitignore browser_pid.txt
+                pkill Xvfb || true
+                git add screenshot* .gitignore
                 git commit -m "📸$CONTENT" || true
                 git push || true
                 
@@ -157,8 +121,6 @@ jobs:
                 COUNTER=0
               else
                 echo "🛑 خروج"
-                rm -f browser_pid.txt
-                pkill -f puppeteer || true
                 exit 0
               fi
             else
@@ -172,10 +134,9 @@ jobs:
           
           if [ $COUNTER -ge 30 ]; then
             echo "🔄 ریست"
-            rm -f last_command.txt browser_pid.txt
-            pkill -f puppeteer || true
+            rm -f last_command.txt
             COUNTER=0
           fi
           
-          sleep 5
+          sleep 60
         done
