@@ -16,12 +16,20 @@ jobs:
     - name: 🖥️ Setup Chrome
       uses: browser-actions/setup-chrome@v1
     
+    - name: 🧹 Clean + .gitignore
+      run: |
+        echo "node_modules/" >> .gitignore
+        echo "bot.js" >> .gitignore  
+        echo "package.json" >> .gitignore
+        echo "package-lock.json" >> .gitignore
+        git add .gitignore || true
+    
     - name: 🔄 MAIN LOOP - Execute Commands Until EXIT
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        npm init -y && npm i puppeteer@22.12.1
-        echo 'const puppeteer=require("puppeteer");const fs=require("fs");(async(cmd)=>{console.log("📄 "+cmd);const b=await puppeteer.launch({headless:"new",args:["--no-sandbox"]});const p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto("https://chatgpt.com",{waitUntil:"networkidle2"});if(cmd&&cmd!=="exit"){console.log("🚀 "+cmd);if(cmd.startsWith("click ")){const[x,y]=cmd.slice(6).split(" ").map(Number);await p.mouse.click(x,y);console.log("🖱️ "+x+","+y);await new Promise(r=>setTimeout(r,2000));}else if(cmd.startsWith("type ")){await p.keyboard.type(cmd.slice(5));console.log("⌨️ تایپ");await new Promise(r=>setTimeout(r,1000));}}await p.screenshot({path:"screenshot.png",fullPage:true});await b.close();const img=fs.readFileSync("screenshot.png");const base64=img.toString("base64");fs.writeFileSync("screenshot-base64.txt",base64);console.log("✅ OK");})(process.argv[2]);' > bot.js
+        npm init -y && npm i puppeteer@24.15.0
+        echo 'const puppeteer=require("puppeteer");const fs=require("fs");(async(cmd)=>{console.log("📄 "+cmd);const b=await puppeteer.launch({headless:"new",args:["--no-sandbox"]});const p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto("https://chatgpt.com",{waitUntil:"networkidle2"});if(cmd&&cmd!=="exit"){console.log("🚀 "+cmd);if(cmd.startsWith("click ")){const[x,y]=cmd.slice(6).split(" ").map(Number);await p.mouse.click(x,y);console.log("🖱️ "+x+","+y);await new Promise(r=>setTimeout(r,2000));}else if(cmd.startsWith("type ")){await p.keyboard.type(cmd.slice(5),{delay:50});console.log("⌨️ تایپ");await new Promise(r=>setTimeout(r,1500));}}await p.screenshot({path:"screenshot.png",fullPage:true});await b.close();const img=fs.readFileSync("screenshot.png");const base64=img.toString("base64");fs.writeFileSync("screenshot-base64.txt",base64);console.log("✅ Files OK");})(process.argv[2]);' > bot.js
         
         git config --global user.name "github-actions"
         git config --global user.email "actions@github.com"
@@ -35,25 +43,30 @@ jobs:
           if [ -f "command.txt" ]; then
             CONTENT=$(cat command.txt | head -1 | xargs)
             if [ "$CONTENT" = "exit" ]; then
-              echo "🛑 EXIT!"
+              echo "🛑 EXIT command!"
               LOOP=0
             elif [ -n "$CONTENT" ]; then
               echo "✅ '$CONTENT'"
               node bot.js "$CONTENT"
+              
               git add screenshot.png screenshot-base64.txt || true
-              git commit -m "📸 [$(date +%H:%M)] $CONTENT" || true
+              git add .gitignore || true
+              git commit -m "📸 [$(date +%H:%M:%S)] $CONTENT" || true
               git push origin main || true
-              echo "📤 Uploaded"
+              echo "📤 Screenshot uploaded"
             fi
           fi
-          echo "⏳ 30s..."
+          
+          echo "⏳ Wait 30s..."
           sleep 30
         done
         
-        echo "🎉 5min delay"
+        echo "🎉 Loop finished - 5min final delay"
         sleep 300
         
-        echo "$(date +%H:%M): Complete" >> history.txt
+        echo "$(date +%H:%M:%S): Loop complete" >> history.txt
         git add history.txt || true
-        git commit -m "⏰ Final" || true
+        git commit -m "⏰ FINAL - Loop Complete" || true
         git push origin main || true
+        
+        echo "🏁 ALL DONE!"
