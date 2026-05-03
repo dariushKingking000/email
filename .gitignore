@@ -1,5 +1,5 @@
 node_modules/
-bot.js click.js type.js
+bot.js
 package.json
 package-lock.json
 screenshot.png
