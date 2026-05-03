@@ -21,7 +21,7 @@ jobs:
     - name: Install
       run: npm init -y && npm i puppeteer@latest
     
-    - name: Setup
+    - name: Setup Bot
       run: |
         cat > .gitignore << EOF
         node_modules/
@@ -32,83 +32,84 @@ jobs:
         screenshot-base64.txt
         command.txt
         last_command.txt
+        browser_state.json
         EOF
         
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        const path = require("path");
         
         let browser = null;
         let page = null;
         
-        async function initBrowser() {
+        async function init() {
           if (!browser) {
-            console.log("🚀 راه‌اندازی مرورگر...");
+            console.log("🚀 مرورگر...");
             browser = await puppeteer.launch({
               headless: false,
-              args: [
-                '--no-sandbox', 
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-web-security'
-              ]
+              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             });
             page = await browser.newPage();
             await page.setViewport({ width: 1920, height: 1080 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            await new Promise(r => setTimeout(r, 5000));
-            console.log("✅ مرورگر آماده");
+            
+            // لود state
+            let url = 'https://chatgpt.com';
+            if (fs.existsSync('browser_state.json')) {
+              try {
+                const state = JSON.parse(fs.readFileSync('browser_state.json', 'utf8'));
+                url = state.url || url;
+              } catch(e){}
+            }
+            
+            await page.goto(url, { waitUntil: 'networkidle0' });
+            await new Promise(r => setTimeout(r, 3000));
+            console.log("✅ URL:", page.url());
           }
           return page;
         }
         
-        async function executeCommand(cmd) {
-          console.log("📄" + cmd);
-          const p = await initBrowser();
-          
-          if (cmd && cmd !== "exit") {
+        async function saveState() {
+          if (page) {
+            try {
+              const state = { url: page.url() };
+              fs.writeFileSync('browser_state.json', JSON.stringify(state));
+            } catch(e){}
+          }
+        }
+        
+        (async(cmd) => {
+          try {
+            console.log("📄 " + cmd);
+            const p = await init();
+            
+            if (cmd === "exit") {
+              await browser.close();
+              process.exit(0);
+            }
+            
             if (cmd.startsWith("click ")) {
               const [x, y] = cmd.slice(6).split(" ").map(Number);
-              console.log(`🖱️ کلیک: ${x} ${y}`);
-              await p.mouse.move(x, y, { steps: 10 });
-              await new Promise(r => setTimeout(r, 200));
-              await p.mouse.down({ button: 'left' });
-              await new Promise(r => setTimeout(r, 50));
-              await p.mouse.up({ button: 'left' });
-              console.log(`✅ کلیک شد (${x},${y})`);
-            } else if (cmd.startsWith("type ")) {
+              await p.mouse.click(x, y);
+              console.log(`✅ کلیک ${x},${y}`);
+            } 
+            else if (cmd.startsWith("type ")) {
               const text = cmd.slice(5);
-              console.log(`⌨️ تایپ: ${text}`);
-              await p.click('textarea');
-              await new Promise(r => setTimeout(r, 500));
-              await p.keyboard.type(text, { delay: 80 });
-              console.log(`✅ تایپ شد: ${text}`);
+              await p.click('textarea, input[type="text"]');
+              await p.keyboard.type(text);
+              console.log(`✅ تایپ: ${text}`);
             }
+            
+            await new Promise(r => setTimeout(r, 2000));
+            await p.screenshot({path: "screenshot.png", fullPage: true});
+            fs.writeFileSync("screenshot-base64.txt", 
+              fs.readFileSync("screenshot.png").toString("base64"));
+            
+            await saveState();
+            console.log("✅OK");
+          } catch(e) {
+            console.log("❌", e.message);
           }
-          
-          await new Promise(r => setTimeout(r, 2000));
-          await p.screenshot({path: "screenshot.png", fullPage: true});
-          fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-          console.log("✅OK");
-        }
-        
-        async function cleanup() {
-          if (browser) {
-            await browser.close();
-            browser = null;
-            page = null;
-          }
-        }
-        
-        (async() => {
-          try {
-            await executeCommand(process.argv[2]);
-          } catch (e) {
-            console.error("❌ خطا:", e.message);
-          }
-          // browser رو نبند - برای دفعه بعد نگه دار
-        })();
+        })(process.argv[2]);
         EOF
     
     - name: LOOP
@@ -119,48 +120,25 @@ jobs:
         git config user.email bot@github.com
         
         rm -f last_command.txt
-        
-        COUNTER=0
         export DISPLAY=:99
         Xvfb :99 -screen 0 1920x1080x24 -ac -noreset &
-        XVFB_PID=$!
         sleep 3
         
         while true; do
           git pull origin main
           
           if [ -f command.txt ]; then
-            CONTENT=$(cat command.txt)
-            
-            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
-              if [ "$CONTENT" != "exit" ]; then
-                echo "🆕 دستور جدید: $CONTENT"
-                node bot.js "$CONTENT"
-                git add screenshot* .gitignore
-                git commit -m "📸$CONTENT" || true
-                git push || true
-                
-                echo "$CONTENT" > last_command.txt
-                COUNTER=0
-              else
-                echo "🛑 خروج"
-                kill $XVFB_PID || true
-                exit 0
-              fi
-            else
-              echo "🔄 تکراری: $CONTENT"
-              COUNTER=$((COUNTER + 1))
+            cmd=$(cat command.txt)
+            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$cmd" ]; then
+              echo "🆕 $cmd"
+              node bot.js "$cmd"
+              git add screenshot* browser_state.json .gitignore
+              git commit -m "📸$cmd" || true
+              git push || true
+              echo "$cmd" > last_command.txt
             fi
-          else
-            echo "⏳ منتظر command.txt..."
-            COUNTER=$((COUNTER + 1))
+            rm -f command.txt
           fi
           
-          if [ $COUNTER -ge 30 ]; then
-            echo "🔄 ریست"
-            rm -f last_command.txt
-            COUNTER=0
-          fi
-          
-          sleep 60
+          sleep 30
         done
