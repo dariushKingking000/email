@@ -12,13 +12,42 @@ jobs:
       run: npm init -y && npm i puppeteer
     - name: Setup
       run: |
-        echo node_modules/ > .gitignore
-        echo bot.js >> .gitignore
-        echo screenshot.png >> .gitignore
-        echo screenshot-base64.txt >> .gitignore
+        cat > .gitignore << EOF
+        node_modules/
+        bot.js
+        package.json
+        package-lock.json
+        screenshot.png
+        screenshot-base64.txt
+        command.txt
+        EOF
         
-        echo 'const puppeteer=require("puppeteer");const fs=require("fs");(async(cmd)=>{console.log("📄"+cmd);const b=await puppeteer.launch({headless:"new",args:["--no-sandbox"]});const p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto("https://chatgpt.com");if(cmd&&cmd!=="exit"){if(cmd.startsWith("click ")){const[x,y]=cmd.slice(6).split(" ").map(Number);await p.mouse.click(x,y);await new Promise(r=>setTimeout(r,2000));}}await p.screenshot({path:"screenshot.png",fullPage:true});await b.close();fs.writeFileSync("screenshot-base64.txt",fs.readFileSync("screenshot.png").toString("base64"));console.log("✅OK");})(process.argv[2]);' > bot.js
-    - name: Run Bot
+        cat > bot.js << 'EOF'
+        const puppeteer = require("puppeteer");
+        const fs = require("fs");
+        (async(cmd) => {
+          console.log("📄" + cmd);
+          const b = await puppeteer.launch({
+            headless: "new",
+            args: ["--no-sandbox"]
+          });
+          const p = await b.newPage();
+          await p.setViewport({width: 1920, height: 1080});
+          await p.goto("https://chatgpt.com");
+          if (cmd && cmd !== "exit") {
+            if (cmd.startsWith("click ")) {
+              const [x, y] = cmd.slice(6).split(" ").map(Number);
+              await p.mouse.click(x, y);
+              await new Promise(r => setTimeout(r, 2000));
+            }
+          }
+          await p.screenshot({path: "screenshot.png", fullPage: true});
+          await b.close();
+          fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
+          console.log("✅OK");
+        })(process.argv[2]);
+        EOF
+    - name: LOOP
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -26,5 +55,14 @@ jobs:
         git config user.email bot@github.com
         while true; do
           git pull origin main
-          test -f command.txt && read CONTENT < command.txt && test "$CONTENT" != exit && node bot.js "$CONTENT" && git add screenshot* .gitignore && git commit -m "Screenshot" -m "$CONTENT" && git push || sleep 30
+          if [ -f command.txt ]; then
+            CONTENT=$(cat command.txt)
+            if [ "$CONTENT" != "exit" ]; then
+              node bot.js "$CONTENT"
+              git add screenshot* .gitignore
+              git commit -m "📸$CONTENT" || true
+              git push || true
+            fi
+          fi
+          sleep 60
         done
