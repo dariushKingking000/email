@@ -21,25 +21,14 @@ jobs:
         screenshot-base64.txt
         command.txt
         last_command.txt
-        browser.pid
         EOF
         
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        const { spawn } = require('child_process');
         
         let browser = null;
         let page = null;
-        
-        // Kill previous browser if exists
-        if (fs.existsSync('browser.pid')) {
-          const pid = fs.readFileSync('browser.pid', 'utf8');
-          try {
-            process.kill(pid, 'SIGTERM');
-          } catch(e) {}
-          fs.unlinkSync('browser.pid');
-        }
         
         async function ensureBrowser() {
           try {
@@ -52,12 +41,8 @@ jobs:
             console.log("🌐 باز کردن مرورگر جدید...");
             browser = await puppeteer.launch({
               headless: "new",
-              args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--single-process"]
+              args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             });
-            
-            // Save PID
-            const pid = browser.process().pid;
-            fs.writeFileSync('browser.pid', pid.toString());
             
             page = await browser.newPage();
             await page.setViewport({width: 1920, height: 1080});
@@ -67,7 +52,6 @@ jobs:
           } catch(e) {
             console.error("❌ خطای مرورگر:", e.message);
             if (browser) await browser.close();
-            fs.unlinkSync('browser.pid');
             browser = null;
             page = null;
             throw e;
@@ -108,7 +92,7 @@ jobs:
         git config user.name bot
         git config user.email bot@github.com
         
-        rm -f last_command.txt browser.pid
+        rm -f last_command.txt
         
         COUNTER=0
         while true; do
@@ -124,7 +108,7 @@ jobs:
                 RC=$?
                 echo "📊 Exit code: $RC"
                 if [ $RC -eq 0 ]; then
-                  git add screenshot.png screenshot-base64.txt browser.pid .gitignore
+                  git add screenshot.png screenshot-base64.txt .gitignore || true
                   git commit -m "📸 $CONTENT" || true
                   git push || true
                   echo "$CONTENT" > last_command.txt
@@ -147,7 +131,7 @@ jobs:
           
           if [ $COUNTER -ge 30 ]; then
             echo "🔄 ریست کانتر"
-            rm -f last_command.txt browser.pid
+            rm -f last_command.txt
             COUNTER=0
           fi
           
