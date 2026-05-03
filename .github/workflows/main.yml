@@ -1,4 +1,4 @@
-name: Screenshot Bot (Commands)
+name: Screenshot Bot (Wait + Commands)
 on: [push]
 permissions:
   contents: write
@@ -12,21 +12,38 @@ jobs:
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: 📄 Check command.txt
-      id: read-cmd
+    - name: ⏳ Wait for command.txt (30x 1min)
+      id: wait-cmd
       run: |
-        if [ -f "command.txt" ]; then
-          CONTENT=$(cat command.txt | head -1 | xargs)
-          echo "content=$CONTENT" >> $GITHUB_OUTPUT
-          echo "✅ دستور: '$CONTENT'"
-        else
+        FOUND=0
+        for i in {1..30}; do
+          echo "🔍 $i/30 ($(date +%H:%M:%S))"
+          
+          # آپدیت repo
+          git fetch origin ${{ github.ref_name }}
+          git reset --hard origin/${{ github.ref_name }}
+          
+          if [ -f "command.txt" ]; then
+            CONTENT=$(cat command.txt | head -1 | xargs)
+            if [ -n "$CONTENT" ]; then
+              echo "✅ پیدا شد: '$CONTENT'"
+              echo "content=$CONTENT" >> $GITHUB_OUTPUT
+              FOUND=1
+              break
+            fi
+          fi
+          echo "⏳ خالی - 1 دقیقه صبر"
+          sleep 60
+        done
+        
+        if [ $FOUND -eq 0 ]; then
           echo "content=" >> $GITHUB_OUTPUT
-          echo "❌ خالی"
+          echo "❌ 30 دقیقه - خالی موند"
         fi
     
-    - name: 🤖 Execute Command + Screenshot
+    - name: 🤖 Execute + Screenshot
       env:
-        CMD_CONTENT: ${{ steps.read-cmd.outputs.content }}
+        CMD_CONTENT: ${{ steps.wait-cmd.outputs.content }}
       run: |
         npm init -y
         npm i puppeteer
@@ -36,17 +53,15 @@ jobs:
         const fs = require('fs');
         
         const cmdContent = process.env.CMD_CONTENT || '';
-        console.log(`📄 command.txt: "${cmdContent}"`);
+        console.log(`📄 Final command: "${cmdContent}"`);
         
         (async () => {
           const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
           await page.setViewport({width: 1920, height: 1080});
           
-          // همیشه chatgpt.com
           await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2', timeout: 30000});
           
-          // اجرای دستور
           if (cmdContent) {
             console.log(`🚀 اجرای: ${cmdContent}`);
             
@@ -56,28 +71,23 @@ jobs:
                 const x = parseInt(coords[0]), y = parseInt(coords[1]);
                 await page.mouse.click(x, y);
                 console.log(`🖱️ کلیک: ${x},${y}`);
-                await page.waitForTimeout(2000);
+                await new Promise(r => setTimeout(r, 2000));
               }
             } 
             else if (cmdContent.startsWith('type ')) {
               const text = cmdContent.slice(5);
               await page.keyboard.type(text);
               console.log(`⌨️ تایپ: "${text}"`);
-              await page.waitForTimeout(1000);
-            }
-            else {
-              console.log('❓ دستور نامعتبر');
+              await new Promise(r => setTimeout(r, 1000));
             }
           }
           
-          // اسکرین نهایی
           await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
           
           const base64Image = fs.readFileSync('screenshot.png').toString('base64');
           fs.writeFileSync('screenshot-base64.txt', base64Image);
-          
-          fs.writeFileSync('log.txt', `Command: ${cmdContent}\nURL: chatgpt.com\nTime: ${new Date()}`);
+          fs.writeFileSync('log.txt', `Command: ${cmdContent}`);
           console.log('✅ تمام!');
         })().catch(e => {
           console.error('❌ خطا:', e.message);
