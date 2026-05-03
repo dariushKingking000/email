@@ -49,7 +49,7 @@ jobs:
             Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
           });
           await p.goto("https://chatgpt.com", {waitUntil: 'networkidle2'});
-          await p.waitForTimeout(3000);
+          await new Promise(r => setTimeout(r, 3000));
           
           if (cmd && cmd !== "exit") {
             if (cmd.startsWith("click ")) {
@@ -58,7 +58,7 @@ jobs:
               await new Promise(r => setTimeout(r, 2000));
             }
           }
-          await p.waitForTimeout(2000);
+          await new Promise(r => setTimeout(r, 2000));
           await p.screenshot({path: "screenshot.png", fullPage: true});
           await b.close();
           fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
