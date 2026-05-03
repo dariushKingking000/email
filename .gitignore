@@ -2,3 +2,4 @@ node_modules/
 screenshot.png
 screenshot-base64.txt
 command.txt
+command_processed.txt # فایل کمکی برای مدیریت وضعیت دستور
