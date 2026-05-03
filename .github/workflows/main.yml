@@ -2,28 +2,23 @@ name: Screenshot Bot
 on: push
 permissions:
   contents: write
-
 jobs:
   bot:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
     - uses: browser-actions/setup-chrome@v1
-    - run: npm init -y && npm i puppeteer@24.15.0
-      name: Install
-    - name: Setup Bot
+    - name: Install
+      run: npm init -y && npm i puppeteer
+    - name: Setup
       run: |
         echo node_modules/ > .gitignore
         echo bot.js >> .gitignore
         echo screenshot.png >> .gitignore
         echo screenshot-base64.txt >> .gitignore
         
-        cat>bot.js<<EOF
-const puppeteer=require("puppeteer");const fs=require("fs");(async(cmd)=>{console.log("📄"+cmd);const b=await puppeteer.launch({headless:"new",args:["--no-sandbox"]});const p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto("https://chatgpt.com");if(cmd&&cmd!=="exit"){console.log("🚀"+cmd);if(cmd.startsWith("click ")){const[x,y]=cmd.slice(6).split(" ").map(Number);await p.mouse.click(x,y);console.log("🖱️"+x+","+y);await new Promise(r=>setTimeout(r,2000));}}await p.screenshot({path:"screenshot.png",fullPage:true});await b.close();fs.writeFileSync("screenshot-base64.txt",fs.readFileSync("screenshot.png").toString("base64"));console.log("✅OK");})(process.argv[2]);
-EOF
-    - name: LOOP
+        echo 'const puppeteer=require("puppeteer");const fs=require("fs");(async(cmd)=>{console.log("📄"+cmd);const b=await puppeteer.launch({headless:"new",args:["--no-sandbox"]});const p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto("https://chatgpt.com");if(cmd&&cmd!=="exit"){if(cmd.startsWith("click ")){const[x,y]=cmd.slice(6).split(" ").map(Number);await p.mouse.click(x,y);await new Promise(r=>setTimeout(r,2000));}}await p.screenshot({path:"screenshot.png",fullPage:true});await b.close();fs.writeFileSync("screenshot-base64.txt",fs.readFileSync("screenshot.png").toString("base64"));console.log("✅OK");})(process.argv[2]);' > bot.js
+    - name: Run Bot
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -31,5 +26,5 @@ EOF
         git config user.email bot@github.com
         while true; do
           git pull origin main
-          [ -f command.txt ] && CONTENT=$(cat command.txt|xargs) && [ "$CONTENT" != exit ] && node bot.js "$CONTENT" && git add screenshot* && git commit -m "📸$CONTENT" && git push || sleep 30
+          test -f command.txt && read CONTENT < command.txt && test "$CONTENT" != exit && node bot.js "$CONTENT" && git add screenshot* .gitignore && git commit -m "Screenshot" -m "$CONTENT" && git push || sleep 30
         done
