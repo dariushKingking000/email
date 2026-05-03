@@ -12,24 +12,22 @@ jobs:
     - name: Setup Files
       run: |
         # --- اصلاح شده .gitignore ---
-        # فقط فایل‌هایی که نباید در سورس کنترل باشند اضافه شده‌اند
         cat > .gitignore << EOF
         node_modules/
         screenshot.png
         screenshot-base64.txt
         command.txt
+        command_processed.txt # فایل کمکی برای مدیریت وضعیت دستور
         EOF
         # --- پایان اصلاح شده .gitignore ---
 
         # --- نسخه اصلاح شده bot.js ---
-        # این فایل هر بار در گیت‌هاب اکشن ساخته و نوشته می‌شود
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
-        const fs = require("fs");
+        const fs = require("fs").promises; // استفاده از promises برای async/await
+        const path = require('path');
 
-        (async (cmd) => {
-          console.log("📄 Command: " + cmd);
-
+        async function runBot() {
           const browser = await puppeteer.launch({
             headless: "new",
             defaultViewport: { width: 1280, height: 800 },
@@ -56,73 +54,142 @@ jobs:
           console.log("🌐 Visiting ChatGPT...");
           await page.goto("https://chatgpt.com", { waitUntil: "networkidle2" });
 
-          if (cmd && cmd !== "exit") {
-            if (cmd.startsWith("click ")) {
-              const [x, y] = cmd.slice(6).split(" ").map(Number);
-              console.log(`🖱 Clicking at ${x},${y}`);
-              await page.mouse.click(x, y);
-              // استفاده از setTimeout با Promise برای ایجاد تأخیر
-              await new Promise(resolve => setTimeout(resolve, 1500)); // جایگزین صحیح
+          // حلقه اصلی برای خواندن دستورات
+          while (true) {
+            let commandFilePath = path.join(__dirname, 'command.txt');
+            let commandProcessedPath = path.join(__dirname, 'command_processed.txt');
+
+            let command = null;
+            let commandExists = false;
+            try {
+                // بررسی وجود فایل command.txt
+                await fs.access(commandFilePath);
+                commandExists = true;
+                const content = await fs.readFile(commandFilePath, 'utf-8');
+                command = content.trim();
+            } catch (error) {
+                // فایل وجود ندارد، منتظر می‌مانیم
+                console.log("No command.txt found. Waiting...");
             }
 
-            if (cmd.startsWith("type ")) {
-              const text = cmd.slice(5);
-              console.log("⌨ Typing:", text);
-              await page.keyboard.type(text, { delay: 80 });
-              // استفاده از setTimeout با Promise برای ایجاد تأخیر
-              await new Promise(resolve => setTimeout(resolve, 1500)); // جایگزین صحیح
+            if (commandExists && command) {
+                if (command === "exit") {
+                    console.log("Exit command received. Stopping bot.");
+                    await fs.unlink(commandFilePath); // حذف فایل دستور
+                    break; // خروج از حلقه
+                }
+
+                console.log("Processing command: " + command);
+
+                // اجرای دستور
+                if (command.startsWith("click ")) {
+                  const [x, y] = command.slice(6).split(" ").map(Number);
+                  console.log(`🖱 Clicking at ${x},${y}`);
+                  await page.mouse.click(x, y);
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                } else if (command.startsWith("type ")) {
+                  const text = command.slice(5);
+                  console.log("⌨ Typing:", text);
+                  await page.keyboard.type(text, { delay: 80 });
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                } else {
+                    console.log(`Unknown command: ${command}`);
+                }
+
+                // گرفتن اسکرین شات بعد از هر دستور موفق
+                console.log("📸 Taking screenshot...");
+                await page.screenshot({ path: "screenshot.png", fullPage: true });
+                await fs.writeFile("screenshot-base64.txt",
+                  (await fs.readFile("screenshot.png")).toString("base64")
+                );
+                console.log("✅ Screenshot saved.");
+
+                // فایل دستور را حذف می‌کنیم تا دوباره اجرا نشود
+                await fs.unlink(commandFilePath);
+                // یک فایل نشانگر برای commit ایجاد می‌کنیم
+                await fs.writeFile(commandProcessedPath, "processed");
+
+            } else if (commandExists && command === "") {
+                 // اگر فایل خالی بود، آن را حذف می‌کنیم
+                 console.log("Empty command.txt found. Deleting it.");
+                 await fs.unlink(commandFilePath);
             }
+
+            // منتظر می‌مانیم تا فایل command_processed.txt ایجاد شود (نشان دهنده اتمام کار)
+            // و یا فایل command.txt دوباره ایجاد شود.
+            // این کار باعث می‌شود که اسکریپت منتظر بماند و CPU را اشغال نکند.
+            await new Promise(resolve => setTimeout(resolve, 10000)); // چک کردن هر 10 ثانیه
           }
 
-          console.log("📸 Taking screenshot...");
-          await page.screenshot({ path: "screenshot.png", fullPage: true });
-
           await browser.close();
-          console.log("🔒 Closing browser and saving screenshot...");
+          console.log("🔒 Browser closed.");
+        }
 
-          fs.writeFileSync("screenshot-base64.txt",
-            fs.readFileSync("screenshot.png").toString("base64")
-          );
-
-          console.log("✅ Done");
-        })(process.argv[2]);
+        runBot().catch(error => {
+          console.error("Bot encountered an error:", error);
+          process.exit(1); // خروج با کد خطا در صورت بروز مشکل
+        });
         EOF
         # --- پایان نسخه اصلاح شده bot.js ---
 
-    - name: Run Bot Loop
+    - name: Run Bot Process
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config user.name bot
         git config user.email bot@github.com
+
+        # ابتدا وضعیت فعلی ریپو را بررسی می‌کنیم
+        git pull origin main
+        # اگر فایل command_processed.txt وجود داشت، یعنی آخرین اجرای ربات کامل شده
+        if [ -f command_processed.txt ]; then
+          rm command_processed.txt
+        fi
+
+        # اجرای اسکریپت Node.js که حالا خودش مدیریت حلقه دستورات را بر عهده دارد
+        node bot.js & # اجرای ربات در پس‌زمینه
+
+        # حلقه اصلی در GitHub Actions برای مدیریت git pull, add, commit, push
         while true; do
-          git pull origin main
-          if [ -f command.txt ]; then
-            CONTENT=$(cat command.txt)
-            if [ "$CONTENT" != "exit" ]; then
-              echo "Running command: $CONTENT"
-              node bot.js "$CONTENT"
+          # منتظر می‌مانیم تا اسکریپت ربات، فایل command.txt را پردازش کند
+          # و فایل command_processed.txt را ایجاد کند.
+          sleep 10 # برای جلوگیری از فشار زیاد به CPU
 
-              # --- اصلاح شده بخش add و commit ---
-              # فقط فایل‌های تولید شده و فایل‌های پیکربندی که نباید ignore شوند اضافه می‌شوند
-              git add screenshot* .gitignore bot.js package.json package-lock.json
-              # بررسی وضعیت برای جلوگیری از commit خالی
-              if ! git diff --cached --exit-code; then
-                git commit -m "📸 Bot action: $CONTENT" || echo "No changes to commit"
-                git push || echo "Failed to push"
-              else
-                echo "No changes to commit after bot action."
-              fi
-              # --- پایان اصلاح شده ---
-
+          if [ -f command_processed.txt ]; then
+            echo "Bot has processed a command."
+            # اینجا تغییرات ایجاد شده توسط ربات را اضافه و commit می‌کنیم
+            git add screenshot* .gitignore bot.js package.json package-lock.json command_processed.txt
+            if ! git diff --cached --exit-code; then
+              echo "Committing changes..."
+              git commit -m "📸 Bot action executed" || echo "No changes to commit"
+              git push || echo "Failed to push"
             else
-              echo "Exit command received. Stopping loop."
-              break
+              echo "No new changes detected to commit."
             fi
-          else
-            echo "No command.txt found. Waiting..."
+            rm command_processed.txt # فایل نشانگر را حذف می‌کنیم
+            # بررسی می‌کنیم که آیا دستور exit داده شده یا خیر
+            if [ -f command.txt ] && [ "$(cat command.txt)" == "exit" ]; then
+                echo "Exit command detected. Stopping workflow."
+                # فایل exit را هم حذف می‌کنیم تا ربات متوقف شود
+                rm command.txt
+                # برای اطمینان از توقف ربات در پس‌زمینه:
+                pkill -f "node bot.js"
+                break # خروج از حلقه workflow
+            fi
           fi
-          sleep 60
+
+          # اگر فایل command.txt ایجاد شد، یعنی دستور جدیدی وارد شده
+          if [ -f command.txt ]; then
+             echo "New command detected. Bot will process it in its next check."
+             # فعلا کاری نمی‌کنیم، چون خود ربات فایل را می‌خواند
+          fi
+
+          # همیشه یک git pull انجام می‌دهیم تا از آخرین تغییرات مطلع شویم
+          git pull origin main || echo "Failed to pull changes."
+
         done
+
+        # اطمینان از بسته شدن مرورگر در صورت خروج از حلقه
+        pkill -f "node bot.js" || true
 
 
