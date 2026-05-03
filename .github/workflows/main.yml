@@ -12,7 +12,9 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - uses: browser-actions/setup-chrome@v1
+    
+    - name: 🖥️ Setup Chrome
+      uses: browser-actions/setup-chrome@v1
     
     - name: ⏳ Wait for command (30x)
       id: wait-cmd
@@ -20,7 +22,6 @@ jobs:
         FOUND=0
         for i in {1..30}; do
           echo "🔍 $i/30 ($(date +%H:%M:%S))"
-          
           git fetch origin ${{ github.ref_name }}
           git reset --hard origin/${{ github.ref_name }}
           
@@ -49,13 +50,13 @@ jobs:
         npm init -y
         npm i puppeteer
         
-        cat > bot.js << EOF
+        cat > bot.js << 'JS_EOF'
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
 (async () => {
   const cmdContent = process.env.CMD_CONTENT || '';
-  console.log(\`📄 "\${cmdContent}"\`);
+  console.log(`📄 "${cmdContent}"`);
   
   const browser = await puppeteer.launch({headless: 'new', args: ['--no-sandbox']});
   const page = await browser.newPage();
@@ -64,11 +65,11 @@ const fs = require('fs');
   await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2'});
   
   if (cmdContent) {
-    console.log(\`🚀 \${cmdContent}\`);
+    console.log(`🚀 ${cmdContent}`);
     if (cmdContent.startsWith('click ')) {
       const [x, y] = cmdContent.slice(6).split(' ').map(Number);
       await page.mouse.click(x, y);
-      console.log(\`🖱️ \${x},\${y}\`);
+      console.log(`🖱️ ${x},${y}`);
       await page.waitForTimeout(2000);
     } else if (cmdContent.startsWith('type ')) {
       await page.keyboard.type(cmdContent.slice(5));
@@ -85,9 +86,10 @@ const fs = require('fs');
   fs.writeFileSync('screenshot-base64.txt', base64);
   
   console.log('📏', base64.length);
-  console.log('✅ Files: screenshot.png + screenshot-base64.txt');
+  console.log('✅ Files OK');
 })();
-EOF
+JS_EOF
+        
         node bot.js
     
     - name: 🚀 REAL Upload
@@ -96,25 +98,25 @@ EOF
       run: |
         git config --global user.name "github-actions"
         git config --global user.email "actions@github.com"
-        git add screenshot.png screenshot-base64.txt log.txt *.txt || true
-        git commit -m "📸 Real upload [$(date +%H:%M)]" || true
-        git push origin HEAD:${{ github.ref_name }}
         
-        COMMIT_SHA=$(git rev-parse HEAD)
+        git add screenshot.png screenshot-base64.txt *.txt || true
+        git commit -m "📸 [$(date +%H:%M)]" || true
+        git push origin HEAD:${{ github.ref_name }} || true
+        
+        COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "latest")
         RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${COMMIT_SHA}/screenshot-base64.txt"
-        echo "🔗 $RAW_URL"
-        echo "$RAW_URL" > raw_url.txt
+        echo "🔗 $RAW_URL" > raw_url.txt
     
     - name: ⏳ 5min
       run: |
-        echo "⏳ 5min..."
+        echo "⏳ 5min"
         sleep 300
     
     - name: 📝 Final
       run: |
         git config --global user.name "github-actions"
         git config --global user.email "actions@github.com"
-        echo "$(date +%H:%M): $(cat raw_url.txt 2>/dev/null || echo 'no-url')" >> history.txt
+        echo "$(date +%H:%M): $(cat raw_url.txt 2>/dev/null || echo no-url)" >> history.txt || true
         git add raw_url.txt history.txt || true
-        git commit -m "⏰ Final [skip ci]" || true
+        git commit -m "⏰ Final" || true
         git push origin HEAD:${{ github.ref_name }} || true
