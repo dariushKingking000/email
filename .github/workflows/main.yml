@@ -32,11 +32,11 @@ jobs:
         
         async function ensureBrowser() {
           try {
-            if (!browser || browser.isClosed()) {
+            if (!browser || browser.isClosed?.()) {
               console.log("🌐 باز کردن مرورگر جدید...");
               browser = await puppeteer.launch({
                 headless: "new",
-                args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+                args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-web-security"]
               });
               page = await browser.newPage();
               await page.setViewport({width: 1920, height: 1080});
@@ -45,6 +45,9 @@ jobs:
             }
           } catch(e) {
             console.error("❌ خطای مرورگر:", e.message);
+            if (browser) {
+              await browser.close();
+            }
             browser = null;
             page = null;
             throw e;
@@ -64,7 +67,8 @@ jobs:
                 console.log(`🖱️ کلیک در مختصات: ${x}, ${y}`);
                 
                 await page.mouse.click(x, y);
-                await page.waitForTimeout(3000);
+                // fix: استفاده از Promise به جای waitForTimeout
+                await new Promise(r => setTimeout(r, 3000));
               }
             }
             
@@ -102,8 +106,8 @@ jobs:
             if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
               if [ "$CONTENT" != "exit" ]; then
                 echo "🆕 دستور جدید: $CONTENT"
-                node bot.js "$CONTENT" || echo "❌ خطا در اجرای bot"
-                git add screenshot* .gitignore || true
+                timeout 120 node bot.js "$CONTENT" || echo "❌ خطا یا timeout"
+                git add screenshot.png screenshot-base64.txt .gitignore || true
                 git commit -m "📸 $CONTENT" || true
                 git push || true
                 
