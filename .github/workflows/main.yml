@@ -1,10 +1,10 @@
-name: Screenshot & Auto-Upload (Simple)
+name: Screenshot Bot (Commands)
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  screenshot:
+  bot:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -12,82 +12,102 @@ jobs:
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: 📄 Log command.txt (فقط لاگ)
+    - name: 📄 Check command.txt
       id: read-cmd
       run: |
         if [ -f "command.txt" ]; then
           CONTENT=$(cat command.txt | head -1 | xargs)
           echo "content=$CONTENT" >> $GITHUB_OUTPUT
-          echo "✅ command.txt: '$CONTENT'"
+          echo "✅ دستور: '$CONTENT'"
         else
           echo "content=" >> $GITHUB_OUTPUT
-          echo "❌ command.txt خالی/نداره"
+          echo "❌ خالی"
         fi
     
-    - name: 📸 Screenshot chatgpt.com
+    - name: 🤖 Execute Command + Screenshot
       env:
         CMD_CONTENT: ${{ steps.read-cmd.outputs.content }}
       run: |
         npm init -y
         npm i puppeteer
         
-        cat > screenshot.js << 'EOF'
+        cat > bot.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
         
-        // همیشه chatgpt.com - command.txt فقط لاگ
-        const url = 'https://chatgpt.com';
-        
-        // لاگ command.txt
-        const cmdContent = process.env.CMD_CONTENT || 'خالی';
+        const cmdContent = process.env.CMD_CONTENT || '';
         console.log(`📄 command.txt: "${cmdContent}"`);
-        console.log(`📸 میره: ${url}`);
-        
-        fs.writeFileSync('config.json', JSON.stringify({url, cmd: cmdContent, timestamp: new Date().toISOString()}, null, 2));
         
         (async () => {
           const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
           await page.setViewport({width: 1920, height: 1080});
-          await page.goto(url, {waitUntil: 'networkidle2', timeout: 30000});
+          
+          // همیشه chatgpt.com
+          await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2', timeout: 30000});
+          
+          // اجرای دستور
+          if (cmdContent) {
+            console.log(`🚀 اجرای: ${cmdContent}`);
+            
+            if (cmdContent.startsWith('click ')) {
+              const coords = cmdContent.slice(6).split(' ');
+              if (coords.length === 2) {
+                const x = parseInt(coords[0]), y = parseInt(coords[1]);
+                await page.mouse.click(x, y);
+                console.log(`🖱️ کلیک: ${x},${y}`);
+                await page.waitForTimeout(2000);
+              }
+            } 
+            else if (cmdContent.startsWith('type ')) {
+              const text = cmdContent.slice(5);
+              await page.keyboard.type(text);
+              console.log(`⌨️ تایپ: "${text}"`);
+              await page.waitForTimeout(1000);
+            }
+            else {
+              console.log('❓ دستور نامعتبر');
+            }
+          }
+          
+          // اسکرین نهایی
           await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
           
           const base64Image = fs.readFileSync('screenshot.png').toString('base64');
           fs.writeFileSync('screenshot-base64.txt', base64Image);
-          console.log('📏 Size:', base64Image.length);
-          console.log('✅ آماده!');
+          
+          fs.writeFileSync('log.txt', `Command: ${cmdContent}\nURL: chatgpt.com\nTime: ${new Date()}`);
+          console.log('✅ تمام!');
         })().catch(e => {
           console.error('❌ خطا:', e.message);
           process.exit(1);
         });
         EOF
         
-        node screenshot.js
+        node bot.js
     
-    - name: 🚀 Auto Upload
+    - name: 🚀 Upload
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot* config.json *.txt
-        git commit -m "📸 [$(date +%Y%m%d-%H%M)]"
+        git add screenshot* log.txt *.txt
+        git commit -m "🤖 [$(date +%Y%m%d-%H%M)]"
         git push
         
-        SHA=$(git rev-parse --short HEAD)
         RAW_URL="https://raw.githubusercontent.com/dariushKingking000/email/${{ github.ref_name }}/${{ github.sha }}/screenshot-base64.txt"
         echo "$RAW_URL" > raw_url.txt
-        echo "✅ $RAW_URL"
     
-    - name: ⏳ Wait 5 Minutes
+    - name: ⏳ Wait 5m
       run: sleep 300
     
-    - name: Final Commit
+    - name: Final
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
         echo "$(date): $(cat raw_url.txt)" >> history.txt
         git add raw_url.txt history.txt
-        git commit -m "⏰ Final [skip ci]" || true
+        git commit -m "⏰ [skip ci]" || true
         git push || true
