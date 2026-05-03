@@ -1,16 +1,15 @@
 name: Screenshot Bot
-on: push
-permissions:
-  contents: write
+on:
+  push:
 jobs:
   bot:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - uses: browser-actions/setup-chrome@v1
-    - name: Install
-      run: npm init -y && npm i puppeteer
-    - name: Setup
+    - name: Install Dependencies
+      run: npm init -y && npm install puppeteer
+    - name: Setup Files
       run: |
         cat > .gitignore << EOF
         node_modules/
@@ -21,7 +20,8 @@ jobs:
         screenshot-base64.txt
         command.txt
         EOF
-        
+
+        # --- نسخه اصلاح شده bot.js ---
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
@@ -29,55 +29,75 @@ jobs:
         (async (cmd) => {
           console.log("📄 Command: " + cmd);
 
-          const b = await puppeteer.launch({
-            headless: "new",
+          // راه‌اندازی مرورگر با تنظیمات طبیعی
+          const browser = await puppeteer.launch({
+            headless: "new", // استفاده از headless mode جدید
+            defaultViewport: { width: 1280, height: 800 }, // تنظیم viewport
             args: [
               "--no-sandbox",
               "--disable-setuid-sandbox",
               "--disable-dev-shm-usage",
-              "--disable-gpu",
-              "--no-zygote",
-              "--no-first-run",
-              "--no-default-browser-check"
+              "--disable-blink-features=AutomationControlled", // کلیدی برای مخفی کردن اتوماسیون
+              "--start-maximized", // برای اینکه مرورگر بزرگ باز شود
+              "--disable-gpu" // برای اطمینان بیشتر در محیط‌های headless
             ]
           });
 
-          const p = await b.newPage();
-          await p.setViewport({ width: 1920, height: 1080 });
+          const page = await browser.newPage();
 
-          await p.goto("https://chatgpt.com", { waitUntil: "networkidle2" });
+          // 👇 شبیه‌سازی مرورگر واقعی با تنظیم User-Agent و ویژگی webdriver
+          await page.setUserAgent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" // یک User-Agent رایج کروم
+          );
+          await page.evaluateOnNewDocument(() => {
+            // این خط مهمترین بخش برای عبور از تشخیص Cloudflare است
+            Object.defineProperty(navigator, "webdriver", { get: () => false });
+          });
 
+          console.log("🌐 Visiting ChatGPT...");
+          // استفاده از networkidle2 برای اطمینان از بارگذاری کامل صفحه
+          await page.goto("https://chatgpt.com", { waitUntil: "networkidle2" });
+
+          // اگر دستوری داده شده باشد
           if (cmd && cmd !== "exit") {
-
             // CLICK
             if (cmd.startsWith("click ")) {
               const [x, y] = cmd.slice(6).split(" ").map(Number);
               console.log(`🖱 Clicking at ${x},${y}`);
-              await p.mouse.click(x, y);
-              await new Promise(r => setTimeout(r, 1500));
+              await page.mouse.click(x, y);
+              // کمی تأخیر برای پردازش کلیک
+              await page.waitForTimeout(1500);
             }
 
             // TYPE
             if (cmd.startsWith("type ")) {
               const text = cmd.slice(5);
               console.log("⌨ Typing:", text);
-              await p.keyboard.type(text, { delay: 80 });
-              await new Promise(r => setTimeout(r, 1500));
+              // تأخیر بین حروف برای طبیعی‌تر شدن تایپ
+              await page.keyboard.type(text, { delay: 80 });
+              // کمی تأخیر برای پردازش تایپ
+              await page.waitForTimeout(1500);
             }
           }
 
-          await p.screenshot({ path: "screenshot.png", fullPage: true });
+          console.log("📸 Taking screenshot...");
+          await page.screenshot({ path: "screenshot.png", fullPage: true });
 
-          await b.close();
+          await browser.close();
+          console.log("🔒 Closing browser and saving screenshot...");
 
+          // ذخیره اسکرین‌شات به صورت base64
           fs.writeFileSync("screenshot-base64.txt",
             fs.readFileSync("screenshot.png").toString("base64")
           );
 
-          console.log("✅OK");
+          console.log("✅ Done");
         })(process.argv[2]);
         EOF
-    - name: LOOP
+        # --- پایان نسخه اصلاح شده bot.js ---
+
+    - name: Run Bot Loop
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -88,15 +108,20 @@ jobs:
           if [ -f command.txt ]; then
             CONTENT=$(cat command.txt)
             if [ "$CONTENT" != "exit" ]; then
+              # اجرای اسکریپت بات با دستور خوانده شده
               node bot.js "$CONTENT"
-              git add screenshot* .gitignore
-              git commit -m "📸$CONTENT" || true
-              git push || true
+              # اضافه کردن فایل‌های جدید و کامیت کردن
+              git add screenshot* .gitignore bot.js package.json package-lock.json
+              git commit -m "📸 Bot action: $CONTENT" || echo "No changes to commit"
+              git push || echo "Failed to push"
+            else
+              echo "Exit command received. Stopping loop."
+              break # خروج از حلقه در صورت دریافت دستور exit
             fi
+          else
+            echo "No command.txt found. Waiting..."
           fi
+          # انتظار برای 60 ثانیه قبل از تکرار حلقه
           sleep 60
         done
-
-
-
 
