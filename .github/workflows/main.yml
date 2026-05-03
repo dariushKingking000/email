@@ -7,14 +7,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: browser-actions/setup-chrome@v1
+    
+    - name: Install deps
+      run: |
+        sudo apt update -y
+        sudo apt install -y xvfb ffmpeg git zip unzip x11-xkb-utils
+    
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+    
     - name: Install
-      run: npm init -y && npm i puppeteer
+      run: |
+        npm init -y
+        npm install puppeteer@latest
+    
     - name: Setup
       run: |
         cat > .gitignore << EOF
         node_modules/
-        bot.js click.js type.js
+        bot.js
         package.json
         package-lock.json
         screenshot.png
@@ -29,51 +42,31 @@ jobs:
         (async(cmd) => {
           console.log("📄" + cmd);
           const b = await puppeteer.launch({
-            headless: "new",
+            headless: false,
             args: [
-              "--no-sandbox",
-              "--disable-setuid-sandbox",
-              "--disable-blink-features=AutomationControlled",
-              "--disable-dev-shm-usage",
-              "--disable-web-security",
-              "--disable-features=VizDisplayCompositor",
-              "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              "--remote-debugging-port=9222",
-              "--remote-debugging-address=0.0.0.0"
+              '--no-sandbox', 
+              '--disable-dev-shm-usage',
+              '--disable-gpu',
+              '--disable-background-timer-throttling',
+              '--disable-backgrounding-occluded-windows',
+              '--disable-renderer-backgrounding'
             ]
           });
           const p = await b.newPage();
-          await p.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-          await p.setViewport({width: 1920, height: 1080, deviceScaleFactor: 1});
-          await p.evaluateOnNewDocument(() => {
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-          });
-          await p.goto("https://chatgpt.com", {waitUntil: 'networkidle2'});
-          await new Promise(r => setTimeout(r, 5000));
+          await p.setViewport({ width: 1920, height: 1080 });
+          await p.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
+          console.log('✅ ChatGPT لود شد');
+          await new Promise(r => setTimeout(r, 3000));
           
           if (cmd && cmd !== "exit") {
             if (cmd.startsWith("click ")) {
               const [x, y] = cmd.slice(6).split(" ").map(Number);
-              console.log(`🖱️ کلیک: ${x}, ${y}`);
-              await p.mouse.move(x, y);
-              await new Promise(r => setTimeout(r, 300));
-              await p.mouse.click(x, y, {button: 'left'});
-              await new Promise(r => setTimeout(r, 2000));
+              await p.mouse.click(x, y);
+              console.log(`🖱️ Clicked (${x},${y})`);
             } else if (cmd.startsWith("type ")) {
               const text = cmd.slice(5);
-              console.log(`⌨️ تایپ: ${text}`);
-              try {
-                await p.waitForSelector('textarea[placeholder*="Message"]', {timeout: 10000});
-                await p.click('textarea[placeholder*="Message"]');
-                await new Promise(r => setTimeout(r, 500));
-                await p.keyboard.type(text, {delay: 50});
-                await p.keyboard.press('Enter');
-              } catch(e) {
-                console.log("❌ textarea پیدا نشد");
-              }
-              await new Promise(r => setTimeout(r, 2000));
+              await p.keyboard.type(text, {delay: 150});
+              console.log(`✅ ${text} تایپ شد`);
             }
           }
           await new Promise(r => setTimeout(r, 2000));
@@ -83,6 +76,7 @@ jobs:
           console.log("✅OK");
         })(process.argv[2]);
         EOF
+    
     - name: LOOP
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -102,7 +96,11 @@ jobs:
             if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
               if [ "$CONTENT" != "exit" ]; then
                 echo "🆕 دستور جدید: $CONTENT"
+                export DISPLAY=:99
+                Xvfb :99 -screen 0 1920x1080x24 -ac -noreset &
+                sleep 2
                 node bot.js "$CONTENT"
+                pkill Xvfb || true
                 git add screenshot* .gitignore
                 git commit -m "📸$CONTENT" || true
                 git push || true
