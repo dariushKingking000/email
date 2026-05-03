@@ -20,6 +20,7 @@ jobs:
         screenshot.png
         screenshot-base64.txt
         command.txt
+        last_command.txt
         EOF
         
         cat > bot.js << 'EOF'
@@ -53,16 +54,48 @@ jobs:
       run: |
         git config user.name bot
         git config user.email bot@github.com
+        
+        # فایل دستور قبلی رو پاک کن
+        rm -f last_command.txt
+        
+        COUNTER=0
         while true; do
           git pull origin main
+          
           if [ -f command.txt ]; then
             CONTENT=$(cat command.txt)
-            if [ "$CONTENT" != "exit" ]; then
-              node bot.js "$CONTENT"
-              git add screenshot* .gitignore
-              git commit -m "📸$CONTENT" || true
-              git push || true
+            
+            # دستور قبلی رو چک کن
+            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
+              if [ "$CONTENT" != "exit" ]; then
+                echo "🆕 دستور جدید: $CONTENT"
+                node bot.js "$CONTENT"
+                git add screenshot* .gitignore
+                git commit -m "📸$CONTENT" || true
+                git push || true
+                
+                # دستور فعلی رو ذخیره کن
+                echo "$CONTENT" > last_command.txt
+                COUNTER=0
+              else
+                echo "🛑 خروج"
+                exit 0
+              fi
+            else
+              echo "🔄 دستور تکراری: $CONTENT"
+              COUNTER=$((COUNTER + 1))
             fi
+          else
+            echo "⏳ منتظر command.txt..."
+            COUNTER=$((COUNTER + 1))
           fi
+          
+          # بعد 30 بار تکرار (30 دقیقه) ریست کن
+          if [ $COUNTER -ge 30 ]; then
+            echo "🔄 ریست کانتر"
+            rm -f last_command.txt
+            COUNTER=0
+          fi
+          
           sleep 60
         done
