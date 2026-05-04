@@ -1,283 +1,68 @@
 name: Screenshot Bot
-on:
-  push:
+on: push
+permissions:
+  contents: write
 jobs:
   bot:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - uses: browser-actions/setup-chrome@v1
-    - name: Install Dependencies
-      run: npm init -y && npm install puppeteer
-    - name: Setup Files
+    - name: Install
+      run: npm init -y && npm i puppeteer
+    - name: Setup
       run: |
-        # --- اصلاح شده .gitignore ---
         cat > .gitignore << EOF
         node_modules/
+        bot.js
+        package.json
+        package-lock.json
         screenshot.png
         screenshot-base64.txt
         command.txt
-        command_processed.txt # فایل کمکی برای مدیریت وضعیت دستور
         EOF
-        # --- پایان اصلاح شده .gitignore ---
-
-        # --- نسخه اصلاح شده bot.js ---
+        
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
-        const fs = require("fs").promises;
-        const path = require('path');
-
-        let lastCommand = null; // برای نگهداری آخرین دستور پردازش شده
-        let commandCounter = 0; // شمارنده دستورات جدید
-        const MAX_COMMANDS = 30; // حداکثر تعداد دستورات قبل از بستن ربات
-
-        async function runBot() {
-          console.log("🚀 Starting bot...");
-          const browser = await puppeteer.launch({
+        const fs = require("fs");
+        (async(cmd) => {
+          console.log("📄" + cmd);
+          const b = await puppeteer.launch({
             headless: "new",
-            defaultViewport: { width: 1280, height: 800 },
-            args: [
-              "--no-sandbox",
-              "--disable-setuid-sandbox",
-              "--disable-dev-shm-usage",
-              "--disable-blink-features=AutomationControlled",
-              "--start-maximized",
-              "--disable-gpu"
-            ]
+            args: ["--no-sandbox"]
           });
-          console.log("✅ Browser launched.");
-
-          const page = await browser.newPage();
-          await page.setUserAgent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-          );
-          await page.evaluateOnNewDocument(() => {
-            Object.defineProperty(navigator, "webdriver", { get: () => false });
-          });
-
-          console.log("🌐 Visiting ChatGPT...");
-          try {
-              await page.goto("https://chatgpt.com", { waitUntil: "networkidle2", timeout: 60000 });
-              console.log("✅ Successfully navigated to ChatGPT.");
-          } catch (error) {
-              console.error("❌ Failed to navigate to ChatGPT:", error);
-              await browser.close();
-              process.exit(1);
-          }
-
-          // حلقه اصلی برای خواندن دستورات
-          while (true) {
-            const commandFilePath = path.join(__dirname, 'command.txt');
-            const commandProcessedPath = path.join(__dirname, 'command_processed.txt');
-            let currentCommand = null;
-            let commandExists = false;
-
-            try {
-                await fs.access(commandFilePath);
-                commandExists = true;
-                const content = await fs.readFile(commandFilePath, 'utf-8');
-                currentCommand = content.trim();
-            } catch (error) {
-                // فایل command.txt وجود ندارد، منتظر می‌مانیم
-                // console.log("No command.txt found. Waiting...");
+          const p = await b.newPage();
+          await p.setViewport({width: 1920, height: 1080});
+          await p.goto("https://chatgpt.com");
+          if (cmd && cmd !== "exit") {
+            if (cmd.startsWith("click ")) {
+              const [x, y] = cmd.slice(6).split(" ").map(Number);
+              await p.mouse.click(x, y);
+              await new Promise(r => setTimeout(r, 2000));
             }
-
-            if (commandExists && currentCommand) {
-                if (currentCommand === "exit") {
-                    console.log("🚪 Exit command received. Stopping bot.");
-                    await fs.unlink(commandFilePath); // حذف فایل دستور
-                    break; // خروج از حلقه
-                }
-
-                if (currentCommand === lastCommand) {
-                    console.log(`⏳ Command "${currentCommand}" is repetitive. Waiting for a new command.`);
-                    await new Promise(resolve => setTimeout(resolve, 10000)); // چک کردن هر 10 ثانیه
-                    continue; // پرش به تکرار بعدی حلقه
-                }
-
-                console.log(`🔄 Processing command #${commandCounter + 1}: "${currentCommand}"`);
-                lastCommand = currentCommand; // ذخیره دستور فعلی به عنوان آخرین دستور
-                commandCounter++;
-
-                // اجرای دستور
-                let commandExecutedSuccessfully = false;
-                try {
-                    if (currentCommand.startsWith("click ")) {
-                      const [x, y] = currentCommand.slice(6).split(" ").map(Number);
-                      console.log(`🖱 Clicking at (${x},${y})...`);
-                      await page.mouse.click(x, y);
-                      await new Promise(resolve => setTimeout(resolve, 1500));
-                      commandExecutedSuccessfully = true;
-                    } else if (currentCommand.startsWith("type ")) {
-                      const text = currentCommand.slice(5);
-                      console.log(`⌨ Typing "${text}"...`);
-                      await page.keyboard.type(text, { delay: 80 });
-                      await new Promise(resolve => setTimeout(resolve, 1500));
-                      commandExecutedSuccessfully = true;
-                    } else {
-                        console.log(`❓ Unknown command: "${currentCommand}"`);
-                    }
-                } catch (executionError) {
-                    console.error(`❌ Error executing command "${currentCommand}":`, executionError);
-                }
-
-                // گرفتن اسکرین شات بعد از هر دستور (حتی اگر خطا داشتیم، برای دیباگ)
-                console.log("📸 Taking screenshot...");
-                try {
-                    await page.screenshot({ path: "screenshot.png", fullPage: true });
-                    await fs.writeFile("screenshot-base64.txt",
-                      (await fs.readFile("screenshot.png")).toString("base64")
-                    );
-                    console.log("✅ Screenshot saved.");
-                } catch (screenshotError) {
-                    console.error("❌ Failed to save screenshot:", screenshotError);
-                }
-
-                // حذف فایل دستور فعلی
-                try {
-                    await fs.unlink(commandFilePath);
-                    console.log(`🗑 Deleted command file: ${commandFilePath}`);
-                } catch (deleteError) {
-                    console.error(`❌ Failed to delete command file ${commandFilePath}:`, deleteError);
-                }
-
-                // ایجاد فایل نشانگر برای commit
-                try {
-                    await fs.writeFile(commandProcessedPath, "processed");
-                    console.log(`👍 Command processed. Created ${commandProcessedPath}.`);
-                } catch (writeMarkerError) {
-                    console.error(`❌ Failed to create processed marker file ${commandProcessedPath}:`, writeMarkerError);
-                }
-
-                // بررسی تعداد دستورات اجرا شده
-                if (commandCounter >= MAX_COMMANDS) {
-                    console.log(`Reached maximum command limit (${MAX_COMMANDS}). Stopping bot.`);
-                    break; // خروج از حلقه
-                }
-
-            } else if (commandExists && currentCommand === "") {
-                 // اگر فایل command.txt خالی بود، آن را حذف می‌کنیم
-                 console.log("📄 Empty command.txt found. Deleting it.");
-                 try {
-                    await fs.unlink(commandFilePath);
-                 } catch (deleteEmptyError) {
-                    console.error(`❌ Failed to delete empty command file ${commandFilePath}:`, deleteEmptyError);
-                 }
-            }
-
-            // جلوگیری از اشغال CPU با انتظار کوتاه
-            await new Promise(resolve => setTimeout(resolve, 5000)); // چک کردن هر 5 ثانیه
           }
-
-          await browser.close();
-          console.log("🔒 Browser closed.");
-        }
-
-        runBot().catch(error => {
-          console.error("Bot encountered a critical error:", error);
-          process.exit(1); // خروج با کد خطا در صورت بروز مشکل
-        });
+          await p.screenshot({path: "screenshot.png", fullPage: true});
+          await b.close();
+          fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
+          console.log("✅OK");
+        })(process.argv[2]);
         EOF
-        # --- پایان نسخه اصلاح شده bot.js ---
-
-    - name: Run Bot and Manage Git
+    - name: LOOP
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        echo "--- Initializing Git ---"
-        git config --global user.name "Bot User"
-        git config --global user.email "bot@github.com"
-        git config --global pull.rebase false # Ensure git pull doesn't rebase by default
-
-        echo "--- Fetching latest changes ---"
-        git pull origin main || echo "No existing main branch found or failed to pull. Continuing..."
-
-        # اطمینان از پاک بودن فایل‌های موقت قبل از شروع
-        if [ -f command_processed.txt ]; then
-          echo "Removing old command_processed.txt"
-          rm command_processed.txt
-        fi
-        if [ -f command.txt ]; then
-          echo "Removing old command.txt if it exists"
-          rm command.txt
-        fi
-
-        echo "--- Starting bot in background ---"
-        node bot.js & # اجرای ربات در پس‌زمینه
-        BOT_PID=$!
-        echo "Bot process started with PID: ${BOT_PID}"
-
-        # حلقه اصلی در GitHub Actions برای مدیریت git pull, add, commit, push
-        MAX_GIT_PUSH_ATTEMPTS=5
-        PUSH_ATTEMPTS=0
+        git config user.name bot
+        git config user.email bot@github.com
         while true; do
-          sleep 5 # انتظار کوتاه برای جلوگیری از بار اضافی CPU
-
-          # بررسی اینکه آیا ربات هنوز در حال اجراست
-          if ! ps -p $BOT_PID > /dev/null; then
-            echo "Bot process (PID: $BOT_PID) has terminated unexpectedly."
-            break # خروج از حلقه workflow
-          fi
-
-          # بررسی فایل نشانگر پردازش دستور
-          if [ -f command_processed.txt ]; then
-            echo "--- Detected processed command marker ---"
-
-            # بررسی وضعیت ربات و آماده بودن برای push
-            echo "Fetching latest changes before commit..."
-            git pull origin main || echo "Failed to pull before commit. Will retry later."
-
-            echo "Staging changes..."
-            git add screenshot* .gitignore bot.js package.json package-lock.json command_processed.txt || echo "Failed to stage files."
-
-            # بررسی اینکه آیا تغییری برای commit وجود دارد
-            if ! git diff --cached --exit-code; then
-              echo "Committing changes..."
-              git commit -m "📸 Bot action executed"
-              if [ $PUSH_ATTEMPTS -lt $MAX_GIT_PUSH_ATTEMPTS ]; then
-                echo "Pushing changes to origin main..."
-                git push origin main
-                if [ $? -eq 0 ]; then
-                  echo "✅ Successfully pushed changes."
-                  PUSH_ATTEMPTS=0 # ریست کردن شمارنده تلاش‌ها پس از موفقیت
-                else
-                  echo "❌ Failed to push changes. Retrying..."
-                  PUSH_ATTEMPTS=$((PUSH_ATTEMPTS + 1))
-                  sleep 10 # انتظار قبل از تلاش مجدد push
-                fi
-              else
-                echo "❌ Max push attempts reached. Skipping push for this cycle."
-                # ممکن است بخواهید در اینجا یک هشدار ارسال کنید یا workflow را متوقف کنید
-              fi
-            else
-              echo "No new changes detected to commit."
-            fi
-            echo "Removing command_processed.txt marker..."
-            rm command_processed.txt # حذف فایل نشانگر پس از پردازش
-          fi
-
-          # بررسی دستور خروج
+          git pull origin main
           if [ -f command.txt ]; then
-            COMMAND_CONTENT=$(cat command.txt)
-            if [ "$COMMAND_CONTENT" == "exit" ]; then
-                echo "🚪 Exit command detected in command.txt. Stopping bot and workflow."
-                # پاک کردن فایل exit برای اطمینان از عدم اجرای مجدد
-                rm command.txt
-                # ارسال سیگنال به ربات برای اتمام
-                echo "Sending termination signal to bot (PID: $BOT_PID)..."
-                kill $BOT_PID
-                wait $BOT_PID # منتظر می‌مانیم تا فرآیند ربات به طور کامل خاتمه یابد
-                echo "Bot process (PID: $BOT_PID) terminated."
-                break # خروج از حلقه workflow
+            CONTENT=$(cat command.txt)
+            if [ "$CONTENT" != "exit" ]; then
+              node bot.js "$CONTENT"
+              git add screenshot* .gitignore
+              git commit -m "📸$CONTENT" || true
+              git push || true
             fi
           fi
-
-          # اطمینان از اینکه ربات هنوز در حال اجراست و اگر نه، حلقه workflow را متوقف می‌کنیم
-          if ! ps -p $BOT_PID > /dev/null; then
-              echo "Bot process (PID: $BOT_PID) seems to have stopped. Exiting workflow loop."
-              break
-          fi
+          sleep 60
         done
-
-        echo "--- Workflow finished ---"
