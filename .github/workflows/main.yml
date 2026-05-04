@@ -27,95 +27,48 @@ jobs:
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        const path = require("path");
         
         let browser = null;
         let page = null;
-        let isInitialized = false;
         
         async function initBrowser() {
           if (browser) return;
-          
           console.log("🚀 راه‌اندازی مرورگر...");
           browser = await puppeteer.launch({
             headless: "new",
-            args: [
-              "--no-sandbox",
-              "--disable-setuid-sandbox",
-              "--disable-dev-shm-usage",
-              "--disable-accelerated-2d-canvas",
-              "--no-first-run",
-              "--no-zygote",
-              "--disable-gpu",
-              "--disable-web-security",
-              "--disable-features=VizDisplayCompositor"
-            ]
+            args: ["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage"]
           });
           page = await browser.newPage();
-          
-          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-          await page.setExtraHTTPHeaders({
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-          });
-          
           await page.setViewport({width: 1920, height: 1080});
-          await page.goto("https://chatgpt.com", { 
-            waitUntil: 'networkidle2',
-            timeout: 60000 
-          });
-          
-          await new Promise(r => setTimeout(r, 3000));
-          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-          await new Promise(r => setTimeout(r, 2000));
-          
-          isInitialized = true;
+          await page.goto("https://chatgpt.com", {waitUntil: 'networkidle2', timeout: 60000});
+          await new Promise(r => setTimeout(r, 5000));
           console.log("✅ مرورگر آماده");
         }
         
         (async(cmd) => {
-          console.log("📄" + (cmd || "screenshot"));
-          
+          console.log("📄 دستور: " + cmd);
           try {
             await initBrowser();
             
-            if (cmd && cmd !== "exit") {
-              if (cmd.startsWith("click ")) {
-                const clickData = cmd.slice(6).trim().split(",");
-                if (clickData.length === 2) {
-                  const x = parseFloat(clickData[0]);
-                  const y = parseFloat(clickData[1]);
-                  
-                  if (!isNaN(x) && !isNaN(y)) {
-                    console.log(`🖱️ کلیک: ${x},${y}`);
-                    await page.mouse.click(x, y);
-                    await new Promise(r => setTimeout(r, 3000));
-                  } else {
-                    console.log("❌ مختصات نامعتبر");
-                  }
-                } else {
-                  console.log("❌ فرمت: click X,Y");
-                }
+            if (cmd?.startsWith("click ")) {
+              const coords = cmd.slice(6).trim().split(",");
+              const x = parseFloat(coords[0]);
+              const y = parseFloat(coords[1]);
+              if (!isNaN(x) && !isNaN(y)) {
+                console.log(`🖱️ کلیک: ${x},${y}`);
+                await page.mouse.click(x, y);
+                await new Promise(r => setTimeout(r, 3000));
               }
             }
             
-            // 🆕 FIX: همیشه screenshot بگیر + commit کن
             await page.screenshot({path: "screenshot.png", fullPage: true});
             fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-            console.log("✅OK - فایل‌ها آماده");
+            console.log("✅OK");
             
-          } catch (error) {
-            console.error("❌ خطا:", error.message);
-            console.error("🔄 ریست مرورگر...");
-            if (browser) {
-              await browser.close();
-              browser = null;
-              isInitialized = false;
-            }
+          } catch(e) {
+            console.error("❌ خطا: " + e.message);
+            if (browser) await browser.close();
+            browser = null;
           }
         })(process.argv[2]);
         EOF
@@ -126,46 +79,45 @@ jobs:
         git config user.name bot
         git config user.email bot@github.com
         
-        rm -f last_command.txt browser_state.json
+        echo "🔄 شروع لوپ..."
+        rm -f last_command.txt
         
-        COUNTER=0
         while true; do
-          git pull origin main
+          echo "📥 git pull..."
+          git pull origin main || true
           
           if [ -f command.txt ]; then
             CONTENT=$(cat command.txt)
+            LAST_CMD=""
+            [ -f last_command.txt ] && LAST_CMD=$(cat last_command.txt)
             
-            # 🆕 FIX: همیشه چک کن و commit کن
+            echo "📋 command.txt: '$CONTENT'"
+            echo "📋 last_command.txt: '$LAST_CMD'"
+            
             if [ "$CONTENT" != "exit" ]; then
-              echo "🆕 دستور: $CONTENT"
-              node bot.js "$CONTENT"
-              
-              # همیشه commit کن
-              if [ -f screenshot.png ]; then
-                git add screenshot* .gitignore bot.js
-                git commit -m "📸$CONTENT" || true
-                git push || true
-                echo "✅ commit/push موفق"
+              if [ "$CONTENT" != "$LAST_CMD" ]; then
+                echo "🆕 دستور جدید: $CONTENT"
+                node bot.js "$CONTENT"
+                
+                if [ -f screenshot.png ]; then
+                  git add screenshot.png screenshot-base64.txt
+                  git commit -m "📸 $CONTENT" || true
+                  git push || true
+                  echo "✅ COMMIT/PUSH موفق"
+                fi
+                
+                echo "$CONTENT" > last_command.txt
               else
-                echo "⚠️ screenshot.png پیدا نشد"
+                echo "🔄 دستور تکراری: $CONTENT - منتظر تغییر"
               fi
-              
-              echo "$CONTENT" > last_command.txt
-              COUNTER=0
             else
               echo "🛑 خروج"
               exit 0
             fi
           else
-            echo "⏳ منتظر command.txt..."
-            COUNTER=$((COUNTER + 1))
+            echo "⏳ command.txt وجود ندارد"
           fi
           
-          if [ $COUNTER -ge 30 ]; then
-            echo "🔄 ریست کامل"
-            rm -f last_command.txt browser_state.json
-            COUNTER=0
-          fi
-          
+          echo "--- صبر 60 ثانیه ---"
           sleep 60
         done
