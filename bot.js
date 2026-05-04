@@ -11,21 +11,30 @@ function wait(ms) {
 async function initBrowser() {
   console.log("🚀 راه‌اندازی مرورگر...");
   browser = await puppeteer.launch({
-    headless: "new",
+    headless: false,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-      "--window-size=1920,1080"
+      "--disable-web-security",
+      "--disable-features=VizDisplayCompositor",
+      "--window-size=1920,1080",
+      "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     ]
   });
   page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080 });
+  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+  
   console.log("🌐 ChatGPT...");
-  await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 45000 });
-  await wait(4000);
-  console.log("✅ مرورگر آماده و persistent!");
+  await page.goto("https://chatgpt.com", { 
+    waitUntil: 'networkidle0', 
+    timeout: 60000 
+  });
+  
+  await page.waitForTimeout(10000);
+  console.log("✅ Cloudflare رد شد - ChatGPT آماده!");
 }
 
 async function takeScreenshot() {
@@ -38,7 +47,6 @@ async function takeScreenshot() {
   console.log(`✅ Visible: ${fs.statSync('screenshot.png').size}b`);
 }
 
-// MAIN LOOP
 (async () => {
   await initBrowser();
   
@@ -65,8 +73,6 @@ async function takeScreenshot() {
         
         await takeScreenshot();
         fs.writeFileSync('response.txt', `✅ ${cmd} تمام!`);
-        
-        // 👇 CRITICAL: پاک کردن pipe قبل response
         fs.unlinkSync('command_pipe.txt');
       }
     } catch(e) {
