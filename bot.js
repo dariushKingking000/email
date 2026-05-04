@@ -1,9 +1,11 @@
+cat > bot.js << 'EOF'
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 const path = require("path");
 
 let browser = null;
 let page = null;
+let initialized = false;
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -64,7 +66,16 @@ async function takeScreenshot() {
 
 (async (cmd) => {
   try {
-    await initBrowser();
+    if (!initialized) {
+      await initBrowser();
+      initialized = true;
+    }
+    
+    if (cmd === "exit") {
+      console.log("👋 خروج...");
+      if (browser) await browser.close();
+      process.exit(0);
+    }
     
     if (cmd?.startsWith("click ")) {
       const [x, y] = cmd.slice(6).trim().split(",").map(Number);
@@ -80,7 +91,8 @@ async function takeScreenshot() {
     
   } catch(e) {
     console.error("💥 خطا:", e.message);
-  } finally {
-    if (browser) await browser.close();
+    initialized = false;  // reset برای restart
   }
+  // مرورگر باز می‌مونه!
 })(process.argv[2]);
+EOF
