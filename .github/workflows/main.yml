@@ -9,7 +9,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: browser-actions/setup-chrome@v1
     - name: Install
-      run: npm init -y && npm i puppeteer
+      run: npm init -y && npm i puppeteer xvfb-mock-device
     - name: Setup
       run: |
         cat > .gitignore << EOF
@@ -37,7 +37,7 @@ jobs:
         async function initBrowser() {
           console.log("🚀 راه‌اندازی مرورگر...");
           browser = await puppeteer.launch({
-            headless: false,
+            headless: true,
             args: [
               "--no-sandbox",
               "--disable-setuid-sandbox",
@@ -45,6 +45,9 @@ jobs:
               "--disable-gpu",
               "--disable-web-security",
               "--disable-features=VizDisplayCompositor",
+              "--disable-background-timer-throttling",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
               "--window-size=1920,1080",
               "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             ]
@@ -55,12 +58,12 @@ jobs:
           
           console.log("🌐 ChatGPT...");
           await page.goto("https://chatgpt.com", { 
-            waitUntil: 'networkidle0', 
+            waitUntil: 'domcontentloaded', 
             timeout: 60000 
           });
           
-          await page.waitForTimeout(10000);
-          console.log("✅ Cloudflare رد شد - ChatGPT آماده!");
+          await page.waitForTimeout(15000);
+          console.log("✅ ChatGPT آماده!");
         }
         
         async function takeScreenshot() {
@@ -113,6 +116,11 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1920x1080x24 &
+        
         git config user.name "Screenshot Bot"
         git config user.email "bot@github.com"
         
@@ -122,7 +130,7 @@ jobs:
         timeout 3600 node bot.js &
         BOT_PID=$!
         echo "🤖 Bot PID: $BOT_PID"
-        sleep 30
+        sleep 35
         
         while true; do
           git pull origin main || true
