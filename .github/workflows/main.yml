@@ -9,7 +9,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: browser-actions/setup-chrome@v1
     - name: Install
-      run: npm init -y && npm i puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
+      run: npm init -y && npm i puppeteer
     - name: Setup
       run: |
         cat > .gitignore << EOF
@@ -24,122 +24,86 @@ jobs:
         EOF
         
         cat > bot.js << 'EOF'
-        const puppeteer = require("puppeteer-extra");
-        const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+        const puppeteer = require("puppeteer");
         const fs = require("fs");
-        puppeteer.use(StealthPlugin());
+        
+        console.log("🚀 BOT STARTED");
         
         (async(cmd) => {
-          console.log("📄 Command: " + (cmd || "none"));
+          console.log("1️⃣ CMD: " + cmd);
           
           const browser = await puppeteer.launch({
-            headless: "new",
-            args: [
-              "--no-sandbox",
-              "--disable-setuid-sandbox",
-              "--disable-dev-shm-usage",
-              "--disable-accelerated-2d-canvas",
-              "--no-first-run",
-              "--disable-gpu",
-              "--window-size=1920,1080"
-            ],
-            defaultViewport: { width: 1920, height: 1080 }
+            headless: true,
+            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"]
           });
           
+          console.log("2️⃣ BROWSER OPEN");
           const page = await browser.newPage();
+          await page.setViewport({width: 1920, height: 1080});
           
-          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          console.log("3️⃣ GO TO CHATGPT");
+          await page.goto("https://chatgpt.com", {waitUntil: 'domcontentloaded'});
           
-          console.log("🌐 Loading chatgpt.com...");
-          await page.goto("https://chatgpt.com", { 
-            waitUntil: 'domcontentloaded',
-            timeout: 60000 
-          });
+          // FIXED: use setTimeout instead of waitForTimeout
+          await new Promise(resolve => setTimeout(resolve, 4000));
           
-          // Fix: use page.waitForTimeout or setTimeout
-          await page.waitForTimeout(5000);
+          console.log("4️⃣ PAGE LOADED");
           
-          if (cmd && cmd !== "exit") {
-            if (cmd.startsWith("click ")) {
-              try {
-                const coords = cmd.slice(6).trim().split(",");
-                if (coords.length === 2) {
-                  const x = parseInt(coords[0]);
-                  const y = parseInt(coords[1]);
-                  console.log(`🖱️ Click at (${x}, ${y})`);
-                  
-                  await page.mouse.move(x, y);
-                  await page.waitForTimeout(500);
-                  await page.mouse.click(x, y);
-                  await page.waitForTimeout(2000);
-                  console.log("✅ Click done");
-                }
-              } catch (e) {
-                console.log("❌ Click error: " + e.message);
-              }
-            }
+          if (cmd && cmd.startsWith("click ")) {
+            const parts = cmd.slice(6).trim().split(",");
+            const x = parseInt(parts[0]);
+            const y = parseInt(parts[1]);
+            
+            console.log(`5️⃣ CLICK ${x},${y}`);
+            await page.mouse.click(x, y);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            console.log("6️⃣ CLICK DONE");
           }
           
-          console.log("📸 Screenshot...");
+          console.log("7️⃣ SCREENSHOT");
           await page.screenshot({path: "screenshot.png", fullPage: true});
-          await browser.close();
           
-          fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-          console.log("✅ Complete");
+          await browser.close();
+          console.log("8️⃣ BROWSER CLOSED");
+          
+          const data = fs.readFileSync("screenshot.png").toString("base64");
+          fs.writeFileSync("screenshot-base64.txt", data);
+          
+          console.log("✅ SUCCESS - screenshot.png created!");
         })(process.argv[2]);
         EOF
     - name: LOOP
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        git config --global user.name "bot"
-        git config --global user.email "bot@github.com"
+        git config --global user.name "ScreenshotBot"
+        git config --global user.email "bot@gh.com"
         
-        rm -f last_command.txt command.txt screenshot*
+        echo "🎬 Screenshot Bot Active!"
         
-        echo "🤖 Bot ready - add command.txt"
-        
-        MAX_LOOPS=1000
-        COUNTER=0
-        
-        while [ $COUNTER -lt $MAX_LOOPS ]; do
-          git pull origin main --no-edit || true
+        while true; do
+          git pull origin main || true
           
-          if [ -f "command.txt" ]; then
-            CONTENT=$(cat command.txt 2>/dev/null || echo "")
+          if [ -f command.txt ]; then
+            CMD=$(cat command.txt)
+            echo "🔥 COMMAND: $CMD"
             
-            if [ -f "last_command.txt" ]; then
-              LAST_CONTENT=$(cat last_command.txt 2>/dev/null || echo "")
-              if [ "$CONTENT" = "$LAST_CONTENT" ]; then
-                echo "🔄 Duplicate"
-                sleep 30
-                COUNTER=$((COUNTER + 1))
-                continue
+            LAST=$(cat last_command.txt 2>/dev/null || echo "")
+            if [ "$CMD" != "$LAST" ]; then
+              node bot.js "$CMD"
+              
+              if [ -f screenshot.png ]; then
+                git add screenshot.png screenshot-base64.txt
+                git commit -m "📷 $CMD" || true
+                git push || true
+                echo "✅ Screenshot UPLOADED!"
               fi
+              
+              echo "$CMD" > last_command.txt
             fi
             
-            echo "🆕 Command: $CONTENT"
-            
-            if [ "$CONTENT" = "exit" ]; then
-              echo "🛑 Exiting"
-              exit 0
-            fi
-            
-            timeout 180 node bot.js "$CONTENT" || echo "⚠️ Timeout"
-            
-            if [ -f "screenshot.png" ]; then
-              git add screenshot.png screenshot-base64.txt .gitignore bot.js package* 2>/dev/null || true
-              git commit -m "📸 $CONTENT" || true
-              git push origin main || true
-              echo "📤 Pushed screenshot"
-            fi
-            
-            echo "$CONTENT" > last_command.txt
             rm -f command.txt
-            COUNTER=0
-          else
-            echo "⏳ Waiting... ($COUNTER/$MAX_LOOPS)"
-            sleep 30
-            COUNTER=$((COUNTER + 1))
           fi
+          
+          sleep 10
         done
