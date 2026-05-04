@@ -1,81 +1,107 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
-const path = require("path");
 
 let browser = null;
 let page = null;
-let isInitialized = false;
+let isBrowserReady = false;
 
-async function initBrowser() {
-  if (browser) return;
-  
-  console.log("🚀 راه‌اندازی مرورگر...");
-  browser = await puppeteer.launch({
-    headless: "new",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-accelerated-2d-canvas",
-      "--no-first-run",
-      "--no-zygote",
-      "--disable-gpu",
-      "--disable-web-security",
-      "--disable-features=VizDisplayCompositor"
-    ]
-  });
-  page = await browser.newPage();
-  
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-  await page.setExtraHTTPHeaders({
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'DNT': '1',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-  });
-  
-  await page.setViewport({width: 1920, height: 1080});
-  await page.goto("https://chatgpt.com", { 
-    waitUntil: 'networkidle2',
-    timeout: 60000 
-  });
-  
-  // صبر هوشمند - COMPATIBILITY FIX برای Chromium 149
-  await new Promise(r => setTimeout(r, 3000));
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await new Promise(r => setTimeout(r, 2000));
-  
-  isInitialized = true;
-  console.log("✅ مرورگر آماده");
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-(async(cmd) => {
-  console.log("📄" + (cmd || "screenshot"));
+async function safeCloseBrowser() {
+  try {
+    if (browser && browser.isConnected()) {
+      await browser.close();
+    }
+  } catch(e) {}
+  browser = null;
+  page = null;
+  isBrowserReady = false;
+}
+
+async function initBrowser() {
+  try {
+    if (browser && !browser.isConnected()) {
+      await safeCloseBrowser();
+    }
+    
+    if (!browser || !isBrowserReady) {
+      console.log("🚀 راه‌اندازی مرورگر...");
+      await safeCloseBrowser();
+      
+      browser = await puppeteer.launch({
+        headless: "new",
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu"
+        ]
+      });
+      
+      page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080 });
+      
+      console.log("🌐 بارگذاری ChatGPT...");
+      await page.goto("https://chatgpt.com", { 
+        waitUntil: 'domcontentloaded', 
+        timeout: 30000 
+      });
+      
+      await wait(3000);
+      isBrowserReady = true;
+      console.log("✅ مرورگر آماده!");
+    }
+  } catch(e) {
+    console.error("❌ خطای init:", e.message);
+    await safeCloseBrowser();
+    throw e;
+  }
+}
+
+async function takeScreenshot() {
+  try {
+    console.log("📸 گرفتن اسکرین‌شات...");
+    const screenshotBuffer = await page.screenshot({
+      type: 'png'
+    });
+    
+    fs.writeFileSync("screenshot.png", screenshotBuffer);
+    fs.writeFileSync("screenshot-base64.txt", screenshotBuffer.toString('base64'));
+    
+    console.log(`✅ اسکرین‌شات: ${screenshotBuffer.length} بایت`);
+    return true;
+  } catch(e) {
+    console.error("❌ خطای screenshot:", e.message);
+    return false;
+  }
+}
+
+(async (cmd) => {
+  console.log("🎯 دستور:", cmd || "screenshot");
   
   try {
     await initBrowser();
     
-    if (cmd && cmd !== "exit") {
-      if (cmd.startsWith("click ")) {
-        const [x, y] = cmd.slice(6).split(" ").map(Number);
+    if (cmd?.startsWith("click ")) {
+      const coords = cmd.slice(6).trim().split(",");
+      const x = parseFloat(coords[0]);
+      const y = parseFloat(coords[1]);
+      
+      if (!isNaN(x) && !isNaN(y)) {
         console.log(`🖱️ کلیک: ${x},${y}`);
         await page.mouse.click(x, y);
-        await new Promise(r => setTimeout(r, 3000)); // ✅ سازگار با همه نسخه‌ها
+        await wait(1500);
       }
     }
     
-    await page.screenshot({path: "screenshot.png", fullPage: true});
-    fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-    console.log("✅OK");
+    const success = await takeScreenshot();
+    process.exit(success ? 0 : 1);
     
-  } catch (error) {
-    console.error("❌ خطا:", error.message);
-    if (browser) {
-      await browser.close();
-      browser = null;
-      isInitialized = false;
-    }
+  } catch(e) {
+    console.error("💥 خطا:", e.message);
+    await safeCloseBrowser();
+    process.exit(1);
   }
 })(process.argv[2]);

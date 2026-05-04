@@ -2,8 +2,5 @@ node_modules/
 bot.js
 package.json
 package-lock.json
-screenshot.png
-screenshot-base64.txt
 command.txt
 last_command.txt
-browser_state.json
