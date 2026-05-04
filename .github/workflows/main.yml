@@ -85,7 +85,6 @@ jobs:
             
             if (cmd && cmd !== "exit") {
               if (cmd.startsWith("click ")) {
-                // 🆕 FIX: پارس دقیق مختصات
                 const clickData = cmd.slice(6).trim().split(",");
                 if (clickData.length === 2) {
                   const x = parseFloat(clickData[0]);
@@ -104,12 +103,14 @@ jobs:
               }
             }
             
+            // 🆕 FIX: همیشه screenshot بگیر + commit کن
             await page.screenshot({path: "screenshot.png", fullPage: true});
             fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-            console.log("✅OK");
+            console.log("✅OK - فایل‌ها آماده");
             
           } catch (error) {
             console.error("❌ خطا:", error.message);
+            console.error("🔄 ریست مرورگر...");
             if (browser) {
               await browser.close();
               browser = null;
@@ -134,26 +135,26 @@ jobs:
           if [ -f command.txt ]; then
             CONTENT=$(cat command.txt)
             
-            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
-              if [ "$CONTENT" != "exit" ]; then
-                echo "🆕 دستور جدید: $CONTENT"
-                node bot.js "$CONTENT"
+            # 🆕 FIX: همیشه چک کن و commit کن
+            if [ "$CONTENT" != "exit" ]; then
+              echo "🆕 دستور: $CONTENT"
+              node bot.js "$CONTENT"
+              
+              # همیشه commit کن
+              if [ -f screenshot.png ]; then
                 git add screenshot* .gitignore bot.js
                 git commit -m "📸$CONTENT" || true
                 git push || true
-                
-                echo "$CONTENT" > last_command.txt
-                COUNTER=0
+                echo "✅ commit/push موفق"
               else
-                echo "🛑 خروج"
-                exit 0
+                echo "⚠️ screenshot.png پیدا نشد"
               fi
+              
+              echo "$CONTENT" > last_command.txt
+              COUNTER=0
             else
-              echo "🔄 دستور تکراری: $CONTENT - screenshot جدید"
-              node bot.js ""
-              git add screenshot*
-              git commit -m "🔄 بروزرسانی $CONTENT" || true
-              git push || true
+              echo "🛑 خروج"
+              exit 0
             fi
           else
             echo "⏳ منتظر command.txt..."
