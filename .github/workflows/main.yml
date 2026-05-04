@@ -26,51 +26,53 @@ jobs:
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
+        let browser = null;
+        let page = null;
         
-        console.log("🚀 BOT STARTED");
+        console.log("🚀 SINGLE BROWSER BOT");
         
         (async(cmd) => {
-          console.log("1️⃣ CMD: " + cmd);
+          console.log("📋 CMD:", cmd);
           
-          const browser = await puppeteer.launch({
-            headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"]
-          });
-          
-          console.log("2️⃣ BROWSER OPEN - STAYS ALIVE");
-          const page = await browser.newPage();
-          await page.setViewport({width: 1920, height: 1080});
-          
-          console.log("3️⃣ GO TO CHATGPT");
-          await page.goto("https://chatgpt.com", {waitUntil: 'domcontentloaded'});
-          
-          await new Promise(resolve => setTimeout(resolve, 4000));
-          
-          console.log("4️⃣ PAGE LOADED");
+          // Browser reuse
+          if (!browser) {
+            console.log("🌐 [FIRST TIME] Launch browser");
+            browser = await puppeteer.launch({
+              headless: true,
+              args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"]
+            });
+            page = await browser.newPage();
+            await page.setViewport({width: 1920, height: 1080});
+            await page.goto("https://chatgpt.com", {waitUntil: 'domcontentloaded'});
+            await new Promise(r=>setTimeout(r,3000));
+            console.log("✅ Browser & page ready - REUSED forever!");
+          } else {
+            console.log("🔄 [REUSE] Using existing browser");
+          }
           
           if (cmd === "exit") {
-            console.log("🛑 EXIT - Closing browser");
-            await browser.close();
-            console.log("✅ Bot stopped");
-            return;
+            console.log("🛑 EXIT - Closing SINGLE browser");
+            if (browser) await browser.close();
+            process.exit(0);
           }
           
           if (cmd && cmd.startsWith("click ")) {
             const parts = cmd.slice(6).trim().split(",");
             const x = parseInt(parts[0]);
             const y = parseInt(parts[1]);
+            console.log(`🖱️ CLICK ${x},${y} on SAME page`);
             
-            console.log(`5️⃣ CLICK ${x},${y}`);
             await page.mouse.click(x, y);
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            console.log("6️⃣ CLICK DONE");
+            await new Promise(r=>setTimeout(r,2000));
           }
           
-          console.log("7️⃣ SCREENSHOT");
+          console.log("📸 Screenshot SAME page");
           await page.screenshot({path: "screenshot.png", fullPage: true});
           
-          // Browser stays open! Only screenshot saved
-          console.log("✅ SUCCESS - Browser ACTIVE - screenshot.png ready!");
+          const data = fs.readFileSync("screenshot.png").toString("base64");
+          fs.writeFileSync("screenshot-base64.txt", data);
+          
+          console.log("✅ DONE - Browser REUSED for next command!");
         })(process.argv[2]);
         EOF
     - name: LOOP
@@ -80,31 +82,35 @@ jobs:
         git config --global user.name "ScreenshotBot"
         git config --global user.email "bot@gh.com"
         
-        echo "🎬 Screenshot Bot Active - Browser STAYS OPEN!"
+        echo "🎬 SINGLE Browser Bot - REUSES browser!"
+        rm -f last_command.txt command.txt screenshot*
         
         while true; do
+          echo "🔄 Checking..."
           git pull origin main || true
           
           if [ -f command.txt ]; then
             CMD=$(cat command.txt)
-            echo "🔥 COMMAND: $CMD"
+            echo "🚀 EXECUTING: $CMD"
             
             LAST=$(cat last_command.txt 2>/dev/null || echo "")
             if [ "$CMD" != "$LAST" ]; then
-              node bot.js "$CMD"
+              timeout 60 node bot.js "$CMD"
               
               if [ -f screenshot.png ]; then
-                git add screenshot.png screenshot-base64.txt
-                git commit -m "📷 $CMD" || true
-                git push || true
-                echo "✅ Screenshot UPLOADED!"
+                git add screenshot.png screenshot-base64.txt .
+                git commit -m "📸 SINGLE BROWSER: $CMD" || true
+                git push origin main || true
+                echo "✅ Screenshot COMMITTED & PUSHED!"
               fi
               
               echo "$CMD" > last_command.txt
+            else
+              echo "⏭️ Duplicate command"
             fi
             
             rm -f command.txt
           fi
           
-          sleep 10
+          sleep 5
         done
