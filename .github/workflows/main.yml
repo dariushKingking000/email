@@ -37,21 +37,31 @@ jobs:
         async function initBrowser() {
           console.log("🚀 راه‌اندازی مرورگر...");
           browser = await puppeteer.launch({
-            headless: "new",
+            headless: false,  # 👈 FIX: visible mode برای Cloudflare
             args: [
               "--no-sandbox",
               "--disable-setuid-sandbox",
               "--disable-dev-shm-usage",
               "--disable-gpu",
-              "--window-size=1920,1080"
+              "--disable-web-security",
+              "--disable-features=VizDisplayCompositor",
+              "--window-size=1920,1080",
+              "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             ]
           });
           page = await browser.newPage();
           await page.setViewport({ width: 1920, height: 1080 });
+          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          
           console.log("🌐 ChatGPT...");
-          await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 45000 });
-          await wait(4000);
-          console.log("✅ مرورگر آماده و persistent!");
+          await page.goto("https://chatgpt.com", { 
+            waitUntil: 'networkidle0', 
+            timeout: 60000 
+          });
+          
+          // 👇 Cloudflare bypass
+          await page.waitForTimeout(10000);
+          console.log("✅ Cloudflare رد شد - ChatGPT آماده!");
         }
         
         async function takeScreenshot() {
@@ -91,8 +101,6 @@ jobs:
                 
                 await takeScreenshot();
                 fs.writeFileSync('response.txt', `✅ ${cmd} تمام!`);
-                
-                // 👇 CRITICAL: پاک کردن pipe قبل response
                 fs.unlinkSync('command_pipe.txt');
               }
             } catch(e) {
@@ -110,15 +118,12 @@ jobs:
         git config user.name "Screenshot Bot"
         git config user.email "bot@github.com"
         
-        echo "🔄 لوپ شروع... (فیکس شده)"
+        echo "🔄 لوپ شروع..."
         rm -f last_command.txt command_pipe.txt response.txt
         
-        # 👇 FIX: اجرای bot در foreground با timeout
         timeout 3600 node bot.js &
         BOT_PID=$!
         echo "🤖 Bot PID: $BOT_PID"
-        
-        # 👇 FIX: منتظر bot تا آماده بشه
         sleep 30
         
         while true; do
@@ -130,13 +135,9 @@ jobs:
             
             if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
               echo "🆕 $CONTENT"
-              
-              # Clear old files
               rm -f command_pipe.txt response.txt
-              
               echo "$CONTENT" > command_pipe.txt
               
-              # Wait response
               for i in {1..60}; do
                 if [ -f response.txt ]; then
                   cat response.txt
@@ -146,9 +147,7 @@ jobs:
                 sleep 1
               done
               
-              sleep 2  # 👇 EXTRA wait برای screenshot کامل
-              
-              # Check files
+              sleep 2
               for file in screenshot.png screenshot-full.png screenshot-base64.txt; do
                 if [ -f "$file" ] && [ -s "$file" ]; then
                   echo "📁 $file: $(stat -c %s "$file") بایت"
@@ -168,7 +167,7 @@ jobs:
               
               echo "$CONTENT" > last_command.txt
             fi
-            rm -f command.txt  # 👇 FIX: پاک کردن command بعد اجرا
+            rm -f command.txt
           fi
           
           sleep 15
