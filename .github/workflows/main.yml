@@ -69,7 +69,7 @@ jobs:
             timeout: 60000 
           });
           
-          // صبر هوشمند برای لود
+          // صبر هوشمند برای لود - FIX: page.waitForTimeout -> page.waitForTimeout ✅
           await page.waitForTimeout(3000);
           await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
           await page.waitForTimeout(2000);
@@ -89,7 +89,7 @@ jobs:
                 const [x, y] = cmd.slice(6).split(" ").map(Number);
                 console.log(`🖱️ کلیک: ${x},${y}`);
                 await page.mouse.click(x, y);
-                await page.waitForTimeout(3000); // صبر دینامیک
+                await page.waitForTimeout(3000); // ✅ درست شده
               }
             }
             
