@@ -1,4 +1,4 @@
-name: Screenshot Bot
+name: Screenshot Bot - Fixed Upload
 on: 
   push:
     branches: [ main ]
@@ -15,15 +15,13 @@ jobs:
     
     - name: Setup Chrome
       uses: browser-actions/setup-chrome@v1
-      with:
-        chrome-version: stable
     
     - name: Install Dependencies
       run: |
         npm init -y
-        npm i puppeteer@latest --save-exact
-        
-    - name: Setup Bot Files
+        npm i puppeteer@latest
+    
+    - name: Create Bot Files
       run: |
         cat > .gitignore << 'EOF'
         node_modules/
@@ -39,270 +37,145 @@ jobs:
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        const path = require("path");
         
         let browser = null;
         let page = null;
-        let isReady = false;
-        
-        console.log("🚀 Screenshot Bot v2.0");
         
         async function wait(ms) {
           return new Promise(resolve => setTimeout(resolve, ms));
         }
         
         async function initBrowser() {
-          try {
-            console.log("🌐 راه‌اندازی مرورگر...");
-            browser = await puppeteer.launch({
-              headless: "new",
-              args: [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-web-security",
-                "--disable-features=VizDisplayCompositor",
-                "--window-size=1920,1080",
-                "--virtual-time-budget=5000"
-              ],
-              timeout: 60000
-            });
-            
-            page = await browser.newPage();
-            await page.setViewport({ width: 1920, height: 1080 });
-            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-            
-            console.log("✅ ChatGPT...");
-            await page.goto("https://chatgpt.com", { 
-              waitUntil: 'networkidle0', 
-              timeout: 60000 
-            });
-            
-            // Wait for page to fully load
-            await wait(5000);
-            await page.evaluate(() => window.scrollTo(0, 0));
-            
-            isReady = true;
-            console.log("✅ مرورگر آماده!");
-          } catch (e) {
-            console.error("❌ Browser Error:", e.message);
-            process.exit(1);
-          }
+          console.log("🚀 Starting browser...");
+          browser = await puppeteer.launch({
+            headless: "new",
+            args: [
+              "--no-sandbox",
+              "--disable-setuid-sandbox",
+              "--disable-dev-shm-usage",
+              "--disable-gpu",
+              "--window-size=1920,1080"
+            ]
+          });
+          page = await browser.newPage();
+          await page.setViewport({ width: 1920, height: 1080 });
+          
+          await page.goto("https://chatgpt.com", { 
+            waitUntil: 'networkidle0', 
+            timeout: 60000 
+          });
+          await wait(3000);
+          console.log("✅ Browser ready!");
         }
         
-        async function takeScreenshot() {
-          try {
-            console.log("📸 گرفتن اسکرین‌شات...");
-            
-            // Visible viewport
-            await page.screenshot({ 
-              path: 'screenshot.png', 
-              type: 'png',
-              fullPage: false 
-            });
-            
-            // Full page
-            await page.screenshot({ 
-              path: 'screenshot-full.png', 
-              type: 'png',
-              fullPage: true 
-            });
-            
-            // Base64 for easy copy
-            const buffer = await page.screenshot({ type: 'png' });
-            fs.writeFileSync("screenshot-base64.txt", buffer.toString('base64'));
-            
-            const stats = {
-              visible: fs.statSync('screenshot.png').size,
-              full: fs.statSync('screenshot-full.png').size
-            };
-            
-            console.log(`✅ اسکرین‌شات‌ها: ${stats.visible}b (visible), ${stats.full}b (full)`);
-            return true;
-          } catch (e) {
-            console.error("❌ Screenshot Error:", e.message);
-            return false;
-          }
+        async function takeScreenshots() {
+          console.log("📸 Taking screenshots...");
+          
+          // Normal screenshot
+          await page.screenshot({ 
+            path: 'screenshot.png', 
+            type: 'png'
+          });
+          
+          // Full page
+          await page.screenshot({ 
+            path: 'screenshot-full.png', 
+            fullPage: true, 
+            type: 'png'
+          });
+          
+          // Base64 version
+          const buffer = await page.screenshot({ type: 'png' });
+          fs.writeFileSync('screenshot-base64.txt', buffer.toString('base64'));
+          
+          console.log("✅ Screenshots saved!");
         }
         
-        async function executeCommand(cmd) {
-          try {
-            if (cmd.startsWith("click ")) {
-              const coords = cmd.slice(6).trim().split(",");
-              const x = parseInt(coords[0]);
-              const y = parseInt(coords[1]);
-              
-              if (!isNaN(x) && !isNaN(y)) {
-                console.log(`🖱️ کلیک: ${x},${y}`);
-                await page.mouse.click(x, y);
-                await wait(2000);
-                return "click";
-              }
-            } else if (cmd === "scroll") {
-              console.log("📜 اسکرول...");
-              await page.evaluate(() => window.scrollBy(0, 500));
-              await wait(1000);
-              return "scroll";
-            } else if (cmd === "top") {
-              console.log("🔝 برو بالا");
-              await page.evaluate(() => window.scrollTo(0, 0));
-              await wait(1000);
-              return "top";
-            }
-            
-            return "unknown";
-          } catch (e) {
-            console.error("❌ Command Error:", e.message);
-            return "error";
-          }
-        }
-        
-        // MAIN LOOP
         (async () => {
           await initBrowser();
           
           while (true) {
-            try {
-              if (!isReady) {
-                await wait(1000);
-                continue;
+            if (fs.existsSync('command_pipe.txt')) {
+              const cmd = fs.readFileSync('command_pipe.txt', 'utf8').trim();
+              console.log(`Command: ${cmd}`);
+              
+              if (cmd === "exit") {
+                await browser.close();
+                process.exit(0);
               }
               
-              if (fs.existsSync('command_pipe.txt')) {
-                const cmd = fs.readFileSync('command_pipe.txt', 'utf8').trim();
-                console.log(`🆕 دستور: "${cmd}"`);
-                
-                if (cmd === "exit") {
-                  console.log("👋 خروج...");
-                  if (browser) await browser.close();
-                  process.exit(0);
-                }
-                
-                // Execute command
-                const result = await executeCommand(cmd);
-                
-                // Take screenshot
-                const screenshotOk = await takeScreenshot();
-                
-                // Response
-                const response = screenshotOk 
-                  ? `✅ ${result} "${cmd}" تمام شد!` 
-                  : `❌ خطا در "${cmd}"`;
-                
-                fs.writeFileSync('response.txt', response);
-                
-                // Clean pipe
-                fs.unlinkSync('command_pipe.txt');
-                console.log(response);
+              if (cmd.startsWith("click ")) {
+                const [x, y] = cmd.slice(6).split(",").map(Number);
+                await page.mouse.click(x, y);
+                await wait(2000);
               }
-            } catch (e) {
-              console.error("❌ Loop Error:", e.message);
+              
+              await takeScreenshots();
+              fs.writeFileSync('response.txt', `OK: ${cmd}`);
+              fs.unlinkSync('command_pipe.txt');
             }
-            
-            await wait(500);
+            await wait(1000);
           }
         })();
         EOF
     
-    - name: Run Bot Loop
+    - name: Run Bot & Monitor
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Git config
         git config user.name "Screenshot Bot"
-        git config user.email "bot@github.com"
+        git config user.email "bot@gh.com"
         
-        echo "🔄 شروع لوپ اصلی..."
-        rm -f last_command.txt command_pipe.txt response.txt *.png *.txt
+        # Clean old files
+        rm -f *.png *.txt command* last*
         
-        # Start bot in background
+        # Start bot
         node bot.js &
         BOT_PID=$!
-        echo "🤖 Bot PID: $BOT_PID"
+        sleep 25
         
-        # Wait for bot ready
-        sleep 30
-        
-        # Main monitoring loop
-        MAX_LOOPS=1000
-        loop=0
-        
-        while [ $loop -lt $MAX_LOOPS ]; do
-          loop=$((loop + 1))
+        # Monitor loop
+        while true; do
+          git pull origin main || true
           
-          # Pull latest changes
-          git pull origin main --ff-only || true
+          if [ -f command.txt ]; then
+            CMD=$(cat command.txt)
+            echo "🆕 New command: $CMD"
+            
+            echo "$CMD" > command_pipe.txt
+            
+            # Wait for response
+            for i in {1..60}; do
+              if [ -f response.txt ]; then
+                echo "$(cat response.txt)"
+                break
+              fi
+              sleep 1
+            done
+            
+            sleep 3
+            rm -f command.txt response.txt command_pipe.txt
+          fi
           
-          # Check for new command
-          if [ -f "command.txt" ]; then
-            CONTENT=$(cat command.txt | tr -d '\n\r')
-            
-            if [ -f "last_command.txt" ]; then
-              LAST_CMD=$(cat last_command.txt | tr -d '\n\r')
-            else
-              LAST_CMD=""
+          # FORCE ADD ALL SCREENSHOTS
+          echo "📁 Checking screenshots..."
+          for file in screenshot.png screenshot-full.png screenshot-base64.txt; do
+            if [ -f "$file" ]; then
+              size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+              echo "Found $file ($size bytes)"
+              git add -f "$file" || echo "Failed to add $file"
             fi
-            
-            # Skip if same command or exit
-            if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
-              echo "🆕 دستور جدید: $CONTENT"
-              
-              # Clear old files
-              rm -f command_pipe.txt response.txt
-              
-              # Send command
-              echo "$CONTENT" > command_pipe.txt
-              echo "📤 دستور ارسال شد"
-              
-              # Wait for response (max 90s)
-              RESPONSE_TIMEOUT=90
-              for i in $(seq 1 $RESPONSE_TIMEOUT); do
-                if [ -f "response.txt" ]; then
-                  echo "📥 پاسخ: $(cat response.txt)"
-                  RESPONSE_OK=1
-                  break
-                fi
-                sleep 1
-              done
-              
-              if [ "$RESPONSE_OK" != "1" ]; then
-                echo "⏰ تایم‌اوت - بدون پاسخ"
-              fi
-              
-              # Extra wait for screenshots
-              sleep 3
-              
-              # Check screenshot files
-              for file in screenshot.png screenshot-full.png screenshot-base64.txt; do
-                if [ -f "$file" ] && [ -s "$file" ]; then
-                  size=$(stat -c %s "$file")
-                  echo "📁 $file: ${size} بایت"
-                fi
-              done
-              
-              # Git commit & push
-              git add -f screenshot*.png screenshot-base64.txt bot.js .gitignore 2>/dev/null || true
-              
-              if git diff --staged --quiet; then
-                echo "ℹ️  بدون تغییر"
-              else
-                git commit -m "📸 $CONTENT | $(date '+%Y-%m-%d %H:%M:%S') | Loop #$loop" || true
-                git push origin main || git push origin main --force-with-lease
-                echo "✅ Push موفق!"
-              fi
-              
-              # Save last command
-              echo "$CONTENT" > last_command.txt
-              RESPONSE_OK=0
-            fi
-            rm -f command.txt
+          done
+          
+          # COMMIT & PUSH EVERY TIME
+          if git diff --staged --name-only | grep -q "screenshot"; then
+            git add -A
+            git commit -m "📸 Screenshot: $(cat command.txt 2>/dev/null || echo 'auto') | $(date)" || true
+            git push origin main -f || git push origin main
+            echo "✅ PUSHED SCREENSHOTS!"
           fi
           
           sleep 10
-        done
+        done &
         
-        # Cleanup
-        kill $BOT_PID 2>/dev/null || true
-        wait $BOT_PID 2>/dev/null || true
-        echo "🏁 Bot متوقف شد"
+        wait $BOT_PID
