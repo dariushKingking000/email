@@ -37,7 +37,7 @@ async function initBrowser() {
     timeout: 60000 
   });
   
-  await page.waitForTimeout(15000);
+  await wait(15000);
   console.log("✅ ChatGPT آماده!");
 }
 
