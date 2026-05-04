@@ -4,6 +4,10 @@ const fs = require("fs");
 let browser = null;
 let page = null;
 
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function initBrowser() {
   console.log("🚀 راه‌اندازی مرورگر...");
   browser = await puppeteer.launch({
@@ -20,16 +24,18 @@ async function initBrowser() {
   await page.setViewport({ width: 1920, height: 1080 });
   console.log("🌐 ChatGPT...");
   await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 45000 });
-  await page.waitForTimeout(4000);
+  await wait(4000);
   console.log("✅ مرورگر آماده و persistent!");
 }
 
 async function takeScreenshot() {
+  console.log("📸 Screenshot...");
   await page.screenshot({ path: 'screenshot.png', type: 'png' });
   await page.screenshot({ path: 'screenshot-full.png', fullPage: true, type: 'png' });
   const buffer = await page.screenshot({ type: 'png' });
   fs.writeFileSync("screenshot-base64.txt", buffer.toString('base64'));
-  console.log("📸 Screenshot OK");
+  console.log(`✅ Full: ${fs.statSync('screenshot-full.png').size}b`);
+  console.log(`✅ Visible: ${fs.statSync('screenshot.png').size}b`);
 }
 
 // MAIN LOOP - Single process forever
@@ -53,7 +59,7 @@ async function takeScreenshot() {
           if (!isNaN(x) && !isNaN(y)) {
             console.log(`🖱️ Click ${x},${y}`);
             await page.mouse.click(x, y);
-            await page.waitForTimeout(2000);
+            await wait(2000);
           }
         }
         
@@ -65,6 +71,6 @@ async function takeScreenshot() {
       console.error("❌ خطا:", e.message);
     }
     
-    await page.waitForTimeout(1000);
+    await wait(1000);
   }
 })();
