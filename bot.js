@@ -66,13 +66,30 @@ async function takeScreenshot() {
           process.exit(0);
         }
         
-        if (cmd?.startsWith("click ")) {
+        if (cmd.startsWith("click ")) {
           const [x, y] = cmd.slice(6).trim().split(",").map(Number);
           if (!isNaN(x) && !isNaN(y)) {
-            console.log(`🖱️ Click ${x},${y}`);
-            await page.mouse.click(x, y);
+            console.log(`🖱️ Real Click ${x},${y}`);
+            await page.mouse.move(x, y);
+            await page.mouse.down();
+            await wait(50);
+            await page.mouse.up();
             await wait(2000);
           }
+        }
+        
+        if (cmd.startsWith("type ")) {
+          const text = cmd.slice(5).trim();
+          console.log(`⌨️  Type: "${text}"`);
+          await page.keyboard.type(text, { delay: 50 });
+          await page.keyboard.press('Enter');
+          await wait(3000);
+        }
+        
+        if (cmd === "enter") {
+          console.log("⏎ Enter");
+          await page.keyboard.press('Enter');
+          await wait(3000);
         }
         
         await takeScreenshot();
