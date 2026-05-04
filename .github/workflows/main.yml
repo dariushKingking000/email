@@ -64,7 +64,7 @@ jobs:
           console.log(`✅ Visible: ${fs.statSync('screenshot.png').size}b`);
         }
         
-        // MAIN LOOP - Single process forever
+        // MAIN LOOP
         (async () => {
           await initBrowser();
           
@@ -91,13 +91,15 @@ jobs:
                 
                 await takeScreenshot();
                 fs.writeFileSync('response.txt', `✅ ${cmd} تمام!`);
+                
+                // 👇 CRITICAL: پاک کردن pipe قبل response
                 fs.unlinkSync('command_pipe.txt');
               }
             } catch(e) {
               console.error("❌ خطا:", e.message);
             }
             
-            await wait(1000);
+            await wait(500);
           }
         })();
         EOF
@@ -108,15 +110,12 @@ jobs:
         git config user.name "Screenshot Bot"
         git config user.email "bot@github.com"
         
-        echo "🔄 لوپ شروع... (مرورگر persistent)"
+        echo "🔄 لوپ شروع... (فیکس شده)"
         rm -f last_command.txt command_pipe.txt response.txt
         
-        # START PERSISTENT BOT
         node bot.js &
         BOT_PID=$!
         echo "🤖 Bot PID: $BOT_PID"
-        
-        # Wait for ready
         sleep 20
         
         while true; do
@@ -129,17 +128,22 @@ jobs:
             if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
               echo "🆕 $CONTENT"
               
+              # Clear old files
+              rm -f command_pipe.txt response.txt
+              
               echo "$CONTENT" > command_pipe.txt
               
-              # Wait response (60s max)
+              # Wait response
               for i in {1..60}; do
                 if [ -f response.txt ]; then
                   cat response.txt
-                  rm -f response.txt
+                  rm -f response.txt command_pipe.txt
                   break
                 fi
                 sleep 1
               done
+              
+              sleep 2  # 👇 EXTRA wait برای screenshot کامل
               
               # Check files
               for file in screenshot.png screenshot-full.png screenshot-base64.txt; do
@@ -148,7 +152,6 @@ jobs:
                 fi
               done
               
-              # Commit
               git add -f screenshot*.png screenshot-base64.txt || true
               git add -f bot.js .gitignore || true
               
