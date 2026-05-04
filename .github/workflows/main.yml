@@ -17,8 +17,6 @@ jobs:
         bot.js
         package.json
         package-lock.json
-        screenshot.png
-        screenshot-base64.txt
         command.txt
         last_command.txt
         EOF
@@ -31,7 +29,6 @@ jobs:
         let page = null;
         let isBrowserReady = false;
         
-        // تابع صبر سازگار با همه نسخه‌ها
         function wait(ms) {
           return new Promise(resolve => setTimeout(resolve, ms));
         }
@@ -76,7 +73,7 @@ jobs:
                 timeout: 30000 
               });
               
-              await wait(3000); // صبر 3 ثانیه
+              await wait(3000);
               isBrowserReady = true;
               console.log("✅ مرورگر آماده!");
             }
@@ -140,25 +137,38 @@ jobs:
         git config user.name "Screenshot Bot"
         git config user.email "bot@github.com"
         
-        echo "🔄 شروع لوپ..."
+        echo "🔄 شروع لوپ بی‌نهایت..."
         rm -f last_command.txt
         
         while true; do
+          echo "📥 git pull..."
           git pull origin main || true
           
           if [ -f command.txt ]; then
             CONTENT=$(cat command.txt)
             LAST_CMD=$(cat last_command.txt 2>/dev/null || echo "")
             
+            echo "📋 دستور: $CONTENT"
+            
             if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
-              echo "🆕 $CONTENT"
+              echo "🆕 اجرای: $CONTENT"
+              
               node bot.js "$CONTENT"
               
               if [ -f screenshot.png ] && [ -s screenshot.png ]; then
-                git add screenshot.png screenshot-base64.txt
-                git commit -m "📸 $CONTENT"
-                git push origin main
-                echo "✅ آپلود شد"
+                echo "📸 کامیت screenshot..."
+                
+                git add -f screenshot.png screenshot-base64.txt
+                git add -f bot.js .gitignore
+                
+                if git diff --staged --quiet; then
+                  echo "ℹ️  تغییری نیست"
+                else
+                  git commit -m "📸 $CONTENT | $(date +%H:%M)"
+                  git push origin main || git push origin main --force
+                  echo "✅ کامیت و push موفق!"
+                fi
+                
                 echo "$CONTENT" > last_command.txt
               else
                 echo "❌ screenshot.png مشکل داره"
@@ -166,5 +176,6 @@ jobs:
             fi
           fi
           
+          echo "--- صبر 20 ثانیه ---"
           sleep 20
         done
