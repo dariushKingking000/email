@@ -28,6 +28,7 @@ jobs:
         
         let browser = null;
         let page = null;
+        let initialized = false;
         
         function wait(ms) {
           return new Promise(resolve => setTimeout(resolve, ms));
@@ -88,7 +89,16 @@ jobs:
         
         (async (cmd) => {
           try {
-            await initBrowser();
+            if (!initialized) {
+              await initBrowser();
+              initialized = true;
+            }
+            
+            if (cmd === "exit") {
+              console.log("👋 خروج...");
+              if (browser) await browser.close();
+              process.exit(0);
+            }
             
             if (cmd?.startsWith("click ")) {
               const [x, y] = cmd.slice(6).trim().split(",").map(Number);
@@ -104,8 +114,7 @@ jobs:
             
           } catch(e) {
             console.error("💥 خطا:", e.message);
-          } finally {
-            if (browser) await browser.close();
+            initialized = false;
           }
         })(process.argv[2]);
         EOF
@@ -129,7 +138,7 @@ jobs:
             if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
               echo "🆕 $CONTENT"
               
-              timeout 180 node bot.js "$CONTENT"
+              node bot.js "$CONTENT"
               
               # چک همه فایل‌های screenshot
               for file in screenshot.png screenshot-full.png screenshot-base64.txt; do
