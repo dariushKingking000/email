@@ -74,7 +74,6 @@ async function takeScreenshot() {
             await page.mouse.down();
             await wait(50);
             await page.mouse.up();
-            await wait(2000);
           }
         }
         
@@ -83,14 +82,16 @@ async function takeScreenshot() {
           console.log(`⌨️  Type: "${text}"`);
           await page.keyboard.type(text, { delay: 50 });
           await page.keyboard.press('Enter');
-          await wait(3000);
         }
         
         if (cmd === "enter") {
           console.log("⏎ Enter");
           await page.keyboard.press('Enter');
-          await wait(3000);
         }
+        
+        // 👇 10 ثانیه صبر بعد هر دستور
+        console.log("⏳ 10s delay...");
+        await wait(10000);
         
         await takeScreenshot();
         fs.writeFileSync('response.txt', `✅ ${cmd} تمام!`);
