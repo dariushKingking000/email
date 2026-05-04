@@ -19,98 +19,141 @@ jobs:
         package-lock.json
         screenshot.png
         screenshot-base64.txt
+        command.txt
         last_command.txt
+        browser_state.json
         EOF
         
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
+        const path = require("path");
         
-        console.log("🔥 COMMAND EXECUTING");
+        let browser = null;
+        let page = null;
+        let isInitialized = false;
         
-        (async(cmd) => {
-          console.log("📝 CMD: " + cmd);
+        async function initBrowser() {
+          if (browser) return;
           
-          const browser = await puppeteer.launch({
-            headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"]
+          console.log("🚀 راه‌اندازی مرورگر...");
+          browser = await puppeteer.launch({
+            headless: "new",
+            args: [
+              "--no-sandbox",
+              "--disable-setuid-sandbox",
+              "--disable-dev-shm-usage",
+              "--disable-accelerated-2d-canvas",
+              "--no-first-run",
+              "--no-zygote",
+              "--disable-gpu",
+              "--disable-web-security",
+              "--disable-features=VizDisplayCompositor"
+            ]
+          });
+          page = await browser.newPage();
+          
+          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          await page.setExtraHTTPHeaders({
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
           });
           
-          console.log("✅ BROWSER OPEN");
-          const page = await browser.newPage();
           await page.setViewport({width: 1920, height: 1080});
+          await page.goto("https://chatgpt.com", { 
+            waitUntil: 'networkidle2',
+            timeout: 60000 
+          });
           
-          console.log("🌐 LOADING CHATGPT");
-          await page.goto("https://chatgpt.com", {waitUntil: 'domcontentloaded'});
-          await new Promise(r=>setTimeout(r,4000));
+          // صبر هوشمند برای لود
+          await page.waitForTimeout(3000);
+          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+          await page.waitForTimeout(2000);
           
-          console.log("✅ PAGE READY");
+          isInitialized = true;
+          console.log("✅ مرورگر آماده");
+        }
+        
+        (async(cmd) => {
+          console.log("📄" + (cmd || "screenshot"));
           
-          // Click command
-          if (cmd.startsWith("click ")) {
-            const parts = cmd.slice(6).trim().split(",");
-            const x = parseInt(parts[0]);
-            const y = parseInt(parts[1]);
-            console.log(`🖱️ CLICKING ${x},${y}`);
-            await page.mouse.click(x, y);
-            await new Promise(r=>setTimeout(r,2000));
+          try {
+            await initBrowser();
+            
+            if (cmd && cmd !== "exit") {
+              if (cmd.startsWith("click ")) {
+                const [x, y] = cmd.slice(6).split(" ").map(Number);
+                console.log(`🖱️ کلیک: ${x},${y}`);
+                await page.mouse.click(x, y);
+                await page.waitForTimeout(3000); // صبر دینامیک
+              }
+            }
+            
+            await page.screenshot({path: "screenshot.png", fullPage: true});
+            fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
+            console.log("✅OK");
+            
+          } catch (error) {
+            console.error("❌ خطا:", error.message);
+            if (browser) {
+              await browser.close();
+              browser = null;
+              isInitialized = false;
+            }
           }
-          
-          // Type command
-          if (cmd.startsWith("type ")) {
-            const text = cmd.slice(5).trim();
-            console.log(`⌨️ TYPING: ${text}`);
-            await page.keyboard.type(text, {delay: 100});
-            await page.keyboard.press('Enter');
-            await new Promise(r=>setTimeout(r,3000));
-          }
-          
-          console.log("📸 TAKING SHOT");
-          await page.screenshot({path: "screenshot.png", fullPage: true});
-          
-          await browser.close();
-          console.log("✅ SHOT SAVED");
-          
-          const data = fs.readFileSync("screenshot.png").toString("base64");
-          fs.writeFileSync("screenshot-base64.txt", data);
-          console.log("🎉 COMPLETE!");
         })(process.argv[2]);
         EOF
     - name: LOOP
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        git config --global user.name "ScreenshotBot"
-        git config --global user.email "bot@gh.com"
+        git config user.name bot
+        git config user.email bot@github.com
         
-        echo "🤖 Bot Ready - 30s DEBUG"
-        rm -f command.txt screenshot*
+        rm -f last_command.txt browser_state.json
         
         COUNTER=0
         while true; do
-          COUNTER=$((COUNTER + 1))
-          echo "🔄 #$COUNTER"
+          git pull origin main
           
-          echo "--- DEBUG ---"
-          ls -la command.txt 2>/dev/null || echo "❌ NO command.txt"
-          
-          git pull origin main || true
-          
-          if [ -f command.txt ] && [ -s command.txt ]; then
-            CMD=$(cat command.txt)
-            echo "🚀 CMD: $CMD"
-            node bot.js "$CMD"
+          if [ -f command.txt ]; then
+            CONTENT=$(cat command.txt)
             
-            if [ -f screenshot.png ]; then
-              git add screenshot.png screenshot-base64.txt
-              git commit -m "📸 $CMD" || true
-              git push origin main || true
-              echo "✅ COMMIT & PUSH!"
+            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
+              if [ "$CONTENT" != "exit" ]; then
+                echo "🆕 دستور جدید: $CONTENT"
+                node bot.js "$CONTENT"
+                git add screenshot* .gitignore
+                git commit -m "📸$CONTENT" || true
+                git push || true
+                
+                echo "$CONTENT" > last_command.txt
+                COUNTER=0
+              else
+                echo "🛑 خروج"
+                exit 0
+              fi
+            else
+              echo "🔄 دستور تکراری: $CONTENT - screenshot جدید"
+              node bot.js ""  # فقط screenshot بدون دستور
+              git add screenshot*
+              git commit -m "🔄 بروزرسانی $CONTENT" || true
+              git push || true
             fi
-            
-            rm -f command.txt
           else
-            echo "⏳ Waiting..."
+            echo "⏳ منتظر command.txt..."
+            COUNTER=$((COUNTER + 1))
           fi
           
-          sleep
+          if [ $COUNTER -ge 30 ]; then
+            echo "🔄 ریست کامل"
+            rm -f last_command.txt browser_state.json
+            COUNTER=0
+          fi
+          
+          sleep 60
+        done
