@@ -1,1 +1,1 @@
-click 1441,700
+type salam
