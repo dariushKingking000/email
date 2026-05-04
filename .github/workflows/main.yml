@@ -1,22 +1,30 @@
 name: Screenshot Bot
-on: push
+on: 
+  push:
+    branches: [main]
+  workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   bot:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    
     - name: Install Chrome & deps
       run: |
         sudo apt-get update
-        sudo apt-get install -y wget gnupg xvfb
+        sudo apt-get install -y wget gnupg xvfb x11-xkb-utils
         wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
         echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
         sudo apt-get update
         sudo apt-get install -y google-chrome-stable
+    
     - name: Install Node deps
-      run: npm init -y && npm i puppeteer
+      run: npm init -y && npm i puppeteer@latest
+    
     - name: Setup
       run: |
         cat > .gitignore << EOF
@@ -43,8 +51,10 @@ jobs:
         
         async function initBrowser() {
           console.log("🚀 راه‌اندازی مرورگر...");
+          
+          // 👇 STEALTH MODE - ضد headless detection!
           browser = await puppeteer.launch({
-            headless: true,
+            headless: false,  // 👈 کلید موفقیت!
             executablePath: '/usr/bin/google-chrome-stable',
             args: [
               '--no-sandbox',
@@ -53,25 +63,41 @@ jobs:
               '--disable-gpu',
               '--disable-web-security',
               '--disable-features=VizDisplayCompositor',
-              '--disable-background-timer-throttling',
-              '--disable-backgrounding-occluded-windows',
-              '--disable-renderer-backgrounding',
+              '--disable-blink-features=AutomationControlled',
+              '--disable-extensions',
+              '--disable-plugins',
+              '--disable-images',
+              '--no-first-run',
+              '--no-service-autorun',
+              '--password-store=basic',
               '--window-size=1920,1080',
               '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             ]
           });
+          
           page = await browser.newPage();
           await page.setViewport({ width: 1920, height: 1080 });
+          
+          // 👇 Anti-detection
+          await page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            window.chrome = { runtime: {} };
+          });
+          
           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
           
           console.log("🌐 ChatGPT...");
           await page.goto("https://chatgpt.com", { 
-            waitUntil: 'domcontentloaded', 
+            waitUntil: 'networkidle0', 
             timeout: 60000 
           });
           
-          await wait(15000);
+          await wait(10000);  // صبر بیشتر
           console.log("✅ ChatGPT آماده!");
+          
+          // 👇 Human-like movement
+          await page.mouse.move(100, 100);
         }
         
         async function takeScreenshot() {
@@ -81,7 +107,6 @@ jobs:
           const buffer = await page.screenshot({ type: 'png' });
           fs.writeFileSync("screenshot-base64.txt", buffer.toString('base64'));
           console.log(`✅ Full: ${fs.statSync('screenshot-full.png').size}b`);
-          console.log(`✅ Visible: ${fs.statSync('screenshot.png').size}b`);
         }
         
         (async () => {
@@ -99,45 +124,47 @@ jobs:
                   process.exit(0);
                 }
                 
+                // 👇 Click با mouse واقعی!
                 if (cmd.startsWith("click ")) {
                   const [x, y] = cmd.slice(6).trim().split(",").map(Number);
                   if (!isNaN(x) && !isNaN(y)) {
-                    console.log(`🖱️ Real Click ${x},${y}`);
-                    await page.mouse.move(x, y);
-                    await page.mouse.down();
-                    await wait(50);
-                    await page.mouse.up();
+                    console.log(`🖱️ Click ${x},${y}`);
+                    // Human-like: move → click
+                    await page.mouse.move(x + Math.random()*10-5, y + Math.random()*10-5);
+                    await wait(100);
+                    await page.mouse.click(x, y, { delay: 50 });
                   }
                 }
                 
+                // 👇 Type با keyboard واقعی + delay!
                 if (cmd.startsWith("type ")) {
                   const text = cmd.slice(5).trim();
-                  console.log(`⌨️  Type: "${text}"`);
-                  await page.keyboard.type(text, { delay: 50 });
-                  await page.keyboard.press('Enter');
+                  console.log(`⌨️ Type: "${text}"`);
+                  await page.keyboard.type(text, { delay: 80 });  // 👈 انسانی!
                 }
                 
                 if (cmd === "enter") {
                   console.log("⏎ Enter");
-                  await page.keyboard.press('Enter');
+                  await page.keyboard.press('Enter', { delay: 50 });
                 }
                 
-                // 👇 10 ثانیه صبر بعد هر دستور
                 console.log("⏳ 10s delay...");
                 await wait(10000);
                 
                 await takeScreenshot();
-                fs.writeFileSync('response.txt', `✅ ${cmd} تمام!`);
+                fs.writeFileSync('response.txt', `✅ ${cmd} OK!`);
                 fs.unlinkSync('command_pipe.txt');
               }
             } catch(e) {
               console.error("❌ خطا:", e.message);
+              await wait(1000);
             }
             
             await wait(500);
           }
         })();
         EOF
+    
     - name: LOOP
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -148,16 +175,16 @@ jobs:
         git config user.name "Screenshot Bot"
         git config user.email "bot@github.com"
         
-        echo "🔄 لوپ شروع..."
+        echo "🔄 لوپ..."
         rm -f last_command.txt command_pipe.txt response.txt
         
-        timeout 3600 node bot.js &
+        timeout 7200 node bot.js &
         BOT_PID=$!
-        echo "🤖 Bot PID: $BOT_PID"
-        sleep 35
+        echo "🤖 PID: $BOT_PID"
+        sleep 45
         
         while true; do
-          git pull origin main || true
+          git pull origin main --force || true
           
           if [ -f command.txt ]; then
             CONTENT=$(cat command.txt)
@@ -168,31 +195,27 @@ jobs:
               rm -f command_pipe.txt response.txt
               echo "$CONTENT" > command_pipe.txt
               
-              for i in {1..90}; do  # 👈 90s timeout برای 10s delay
+              for i in {1..120}; do
                 if [ -f response.txt ]; then
                   cat response.txt
                   rm -f response.txt command_pipe.txt
                   break
                 fi
                 sleep 1
+                echo "⏳ منتظر $i/120..."
               done
               
-              sleep 2
-              for file in screenshot.png screenshot-full.png screenshot-base64.txt; do
-                if [ -f "$file" ] && [ -s "$file" ]; then
-                  echo "📁 $file: $(stat -c %s "$file") بایت"
-                fi
-              done
+              if [ -f "screenshot-full.png" ]; then
+                SIZE=$(stat -c %s screenshot-full.png)
+                echo "📸 $SIZE بایت"
+              fi
               
-              git add -f screenshot*.png screenshot-base64.txt || true
-              git add -f bot.js .gitignore || true
+              git add -f screenshot*.png screenshot-base64.txt bot.js .gitignore || true
               
-              if git diff --staged --quiet; then
-                echo "ℹ️  بدون تغییر"
-              else
-                git commit -m "📸 $CONTENT | $(date)"
-                git push origin main || git push origin main --force
-                echo "✅ Push OK!"
+              if ! git diff --staged --quiet; then
+                git commit -m "📸 $CONTENT | $(date +'%Y-%m-%d %H:%M')" || true
+                git push origin main -f || true
+                echo "✅ Push!"
               fi
               
               echo "$CONTENT" > last_command.txt
@@ -200,5 +223,5 @@ jobs:
             rm -f command.txt
           fi
           
-          sleep 15
+          sleep 10
         done
