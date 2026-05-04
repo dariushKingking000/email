@@ -11,16 +11,20 @@ function wait(ms) {
 async function initBrowser() {
   console.log("🚀 راه‌اندازی مرورگر...");
   browser = await puppeteer.launch({
-    headless: false,
+    headless: true,
+    executablePath: '/usr/bin/google-chrome-stable',
     args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-web-security",
-      "--disable-features=VizDisplayCompositor",
-      "--window-size=1920,1080",
-      "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-web-security',
+      '--disable-features=VizDisplayCompositor',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--window-size=1920,1080',
+      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     ]
   });
   page = await browser.newPage();
@@ -29,12 +33,12 @@ async function initBrowser() {
   
   console.log("🌐 ChatGPT...");
   await page.goto("https://chatgpt.com", { 
-    waitUntil: 'networkidle0', 
+    waitUntil: 'domcontentloaded', 
     timeout: 60000 
   });
   
-  await page.waitForTimeout(10000);
-  console.log("✅ Cloudflare رد شد - ChatGPT آماده!");
+  await page.waitForTimeout(15000);
+  console.log("✅ ChatGPT آماده!");
 }
 
 async function takeScreenshot() {
