@@ -56,31 +56,36 @@ jobs:
             timeout: 60000 
           });
           
+          // Fix: use page.waitForTimeout or setTimeout
           await page.waitForTimeout(5000);
           
           if (cmd && cmd !== "exit") {
             if (cmd.startsWith("click ")) {
               try {
                 const coords = cmd.slice(6).trim().split(",");
-                const x = parseInt(coords[0]);
-                const y = parseInt(coords[1]);
-                console.log(`🖱️ Click at (${x}, ${y})`);
-                
-                await page.mouse.move(x, y);
-                await page.waitForTimeout(500);
-                await page.mouse.click(x, y);
-                await page.waitForTimeout(2000);
+                if (coords.length === 2) {
+                  const x = parseInt(coords[0]);
+                  const y = parseInt(coords[1]);
+                  console.log(`🖱️ Click at (${x}, ${y})`);
+                  
+                  await page.mouse.move(x, y);
+                  await page.waitForTimeout(500);
+                  await page.mouse.click(x, y);
+                  await page.waitForTimeout(2000);
+                  console.log("✅ Click done");
+                }
               } catch (e) {
                 console.log("❌ Click error: " + e.message);
               }
             }
           }
           
+          console.log("📸 Screenshot...");
           await page.screenshot({path: "screenshot.png", fullPage: true});
           await browser.close();
           
           fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-          console.log("✅ Done");
+          console.log("✅ Complete");
         })(process.argv[2]);
         EOF
     - name: LOOP
@@ -92,7 +97,7 @@ jobs:
         
         rm -f last_command.txt command.txt screenshot*
         
-        echo "🤖 Bot started - create command.txt to begin"
+        echo "🤖 Bot ready - add command.txt"
         
         MAX_LOOPS=1000
         COUNTER=0
@@ -106,26 +111,27 @@ jobs:
             if [ -f "last_command.txt" ]; then
               LAST_CONTENT=$(cat last_command.txt 2>/dev/null || echo "")
               if [ "$CONTENT" = "$LAST_CONTENT" ]; then
-                echo "🔄 Duplicate: $CONTENT"
+                echo "🔄 Duplicate"
                 sleep 30
                 COUNTER=$((COUNTER + 1))
                 continue
               fi
             fi
             
-            echo "🆕 New: $CONTENT"
+            echo "🆕 Command: $CONTENT"
             
             if [ "$CONTENT" = "exit" ]; then
-              echo "🛑 Exit command received"
+              echo "🛑 Exiting"
               exit 0
             fi
             
-            timeout 120 node bot.js "$CONTENT" || echo "⚠️ Bot timeout"
+            timeout 180 node bot.js "$CONTENT" || echo "⚠️ Timeout"
             
             if [ -f "screenshot.png" ]; then
               git add screenshot.png screenshot-base64.txt .gitignore bot.js package* 2>/dev/null || true
               git commit -m "📸 $CONTENT" || true
               git push origin main || true
+              echo "📤 Pushed screenshot"
             fi
             
             echo "$CONTENT" > last_command.txt
@@ -137,5 +143,3 @@ jobs:
             COUNTER=$((COUNTER + 1))
           fi
         done
-        
-        echo "⏰ Max loops reached"
