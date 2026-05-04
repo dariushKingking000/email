@@ -37,7 +37,7 @@ jobs:
         async function initBrowser() {
           console.log("🚀 راه‌اندازی مرورگر...");
           browser = await puppeteer.launch({
-            headless: false,  # 👈 FIX: visible mode برای Cloudflare
+            headless: false,
             args: [
               "--no-sandbox",
               "--disable-setuid-sandbox",
@@ -59,7 +59,6 @@ jobs:
             timeout: 60000 
           });
           
-          // 👇 Cloudflare bypass
           await page.waitForTimeout(10000);
           console.log("✅ Cloudflare رد شد - ChatGPT آماده!");
         }
@@ -74,7 +73,6 @@ jobs:
           console.log(`✅ Visible: ${fs.statSync('screenshot.png').size}b`);
         }
         
-        // MAIN LOOP
         (async () => {
           await initBrowser();
           
