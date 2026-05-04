@@ -64,20 +64,17 @@ jobs:
         async function takeScreenshot() {
           console.log("📸 Screenshot...");
           
-          // Full page screenshot
           const screenshot = await page.screenshot({ 
             path: 'screenshot-full.png',
             fullPage: true,
             type: 'png'
           });
           
-          // Visible area
           const screenshotVisible = await page.screenshot({ 
             path: 'screenshot.png',
             type: 'png'
           });
           
-          // Base64 هم
           const buffer = await page.screenshot({ type: 'png' });
           fs.writeFileSync("screenshot-base64.txt", buffer.toString('base64'));
           
@@ -114,7 +111,6 @@ jobs:
             
           } catch(e) {
             console.error("💥 خطا:", e.message);
-            initialized = false;
           }
         })(process.argv[2]);
         EOF
@@ -126,7 +122,10 @@ jobs:
         git config user.email "bot@github.com"
         
         echo "🔄 لوپ شروع..."
-        rm -f last_command.txt
+        rm -f last_command.txt browser_state.txt
+        
+        # ذخیره state مرورگر
+        echo "initialized=false" > browser_state.txt
         
         while true; do
           git pull origin main || true
@@ -138,17 +137,27 @@ jobs:
             if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
               echo "🆕 $CONTENT"
               
+              # خواندن state
+              if [ -f browser_state.txt ]; then
+                source browser_state.txt
+              fi
+              
+              # اجرای blocking
               node bot.js "$CONTENT"
               
-              # چک همه فایل‌های screenshot
+              # ذخیره state جدید
+              if [ "$initialized" = "true" ]; then
+                echo "initialized=true" > browser_state.txt
+              fi
+              
+              # چک screenshot ها
               for file in screenshot.png screenshot-full.png screenshot-base64.txt; do
                 if [ -f "$file" ] && [ -s "$file" ]; then
                   echo "📁 $file: $(stat -c %s "$file") بایت"
                 fi
               done
               
-              # Force commit همه screenshot ها
-              git add -f screenshot*.png screenshot-base64.txt || true
+              git add -f screenshot*.png screenshot-base64.txt browser_state.txt || true
               git add -f bot.js .gitignore || true
               
               if git diff --staged --quiet; then
