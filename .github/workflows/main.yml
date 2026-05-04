@@ -107,7 +107,6 @@ jobs:
                     await page.mouse.down();
                     await wait(50);
                     await page.mouse.up();
-                    await wait(2000);
                   }
                 }
                 
@@ -116,14 +115,16 @@ jobs:
                   console.log(`⌨️  Type: "${text}"`);
                   await page.keyboard.type(text, { delay: 50 });
                   await page.keyboard.press('Enter');
-                  await wait(3000);
                 }
                 
                 if (cmd === "enter") {
                   console.log("⏎ Enter");
                   await page.keyboard.press('Enter');
-                  await wait(3000);
                 }
+                
+                // 👇 10 ثانیه صبر بعد هر دستور
+                console.log("⏳ 10s delay...");
+                await wait(10000);
                 
                 await takeScreenshot();
                 fs.writeFileSync('response.txt', `✅ ${cmd} تمام!`);
@@ -167,7 +168,7 @@ jobs:
               rm -f command_pipe.txt response.txt
               echo "$CONTENT" > command_pipe.txt
               
-              for i in {1..60}; do
+              for i in {1..90}; do  # 👈 90s timeout برای 10s delay
                 if [ -f response.txt ]; then
                   cat response.txt
                   rm -f response.txt command_pipe.txt
