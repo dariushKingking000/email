@@ -98,24 +98,20 @@ jobs:
             CMD=$(cat command.txt)
             echo "🚀 EXECUTE: $CMD"
             
-            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CMD" ]; then
-              node bot.js "$CMD"
-              
-              if [ -f screenshot.png ]; then
-                git add screenshot.png screenshot-base64.txt bot.js .gitignore
-                git commit -m "📸 $CMD" || true
-                git push origin main || true
-                echo "✅ COMMIT & PUSH OK!"
-              else
-                echo "❌ No screenshot.png!"
-              fi
-              
-              echo "$CMD" > last_command.txt
+            # همیشه اجرا کن - حتی اگه تکراری باشه
+            node bot.js "$CMD"
+            
+            if [ -f screenshot.png ]; then
+              git add screenshot.png screenshot-base64.txt bot.js .gitignore
+              git commit -m "📸 $CMD" || true
+              git push origin main || true
+              echo "✅ COMMIT & PUSH OK!"
             else
-              echo "⏭️ Duplicate command"
+              echo "❌ No screenshot.png!"
             fi
             
-            rm -f command.txt
+            # همیشه پاک کن
+            rm -f last_command.txt command.txt
           fi
           
           sleep 60
