@@ -26,53 +26,55 @@ jobs:
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
-        let browser = null;
-        let page = null;
         
-        console.log("🚀 SINGLE BROWSER BOT");
+        console.log("🔥 COMMAND EXECUTING");
         
         (async(cmd) => {
-          console.log("📋 CMD:", cmd);
+          console.log("📝 CMD: " + cmd);
           
-          // Browser reuse
-          if (!browser) {
-            console.log("🌐 [FIRST TIME] Launch browser");
-            browser = await puppeteer.launch({
-              headless: true,
-              args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"]
-            });
-            page = await browser.newPage();
-            await page.setViewport({width: 1920, height: 1080});
-            await page.goto("https://chatgpt.com", {waitUntil: 'domcontentloaded'});
-            await new Promise(r=>setTimeout(r,3000));
-            console.log("✅ Browser & page ready - REUSED forever!");
-          } else {
-            console.log("🔄 [REUSE] Using existing browser");
-          }
+          const browser = await puppeteer.launch({
+            headless: true,
+            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"]
+          });
           
-          if (cmd === "exit") {
-            console.log("🛑 EXIT - Closing SINGLE browser");
-            if (browser) await browser.close();
-            process.exit(0);
-          }
+          console.log("✅ BROWSER OPEN");
+          const page = await browser.newPage();
+          await page.setViewport({width: 1920, height: 1080});
           
-          if (cmd && cmd.startsWith("click ")) {
+          console.log("🌐 LOADING CHATGPT");
+          await page.goto("https://chatgpt.com", {waitUntil: 'domcontentloaded'});
+          await new Promise(r=>setTimeout(r,4000));
+          
+          console.log("✅ PAGE READY");
+          
+          // Click command
+          if (cmd.startsWith("click ")) {
             const parts = cmd.slice(6).trim().split(",");
             const x = parseInt(parts[0]);
             const y = parseInt(parts[1]);
-            console.log(`🖱️ CLICK ${x},${y} on SAME page`);
-            
+            console.log(`🖱️ CLICKING ${x},${y}`);
             await page.mouse.click(x, y);
             await new Promise(r=>setTimeout(r,2000));
           }
           
-          console.log("📸 Screenshot SAME page");
+          // Type command
+          if (cmd.startsWith("type ")) {
+            const text = cmd.slice(5).trim();
+            console.log(`⌨️ TYPING: ${text}`);
+            await page.keyboard.type(text, {delay: 100});
+            await page.keyboard.press('Enter');
+            await new Promise(r=>setTimeout(r,3000));
+          }
+          
+          console.log("📸 TAKING SHOT");
           await page.screenshot({path: "screenshot.png", fullPage: true});
+          
+          await browser.close();
+          console.log("✅ SHOT SAVED");
           
           const data = fs.readFileSync("screenshot.png").toString("base64");
           fs.writeFileSync("screenshot-base64.txt", data);
-          
-          console.log("✅ DONE - Browser REUSED for next command!");
+          console.log("🎉 COMPLETE - Files ready!");
         })(process.argv[2]);
         EOF
     - name: LOOP
@@ -82,26 +84,30 @@ jobs:
         git config --global user.name "ScreenshotBot"
         git config --global user.email "bot@gh.com"
         
-        echo "🎬 SINGLE Browser Bot - REUSES browser!"
+        echo "🤖 Bot Active - 60s intervals"
         rm -f last_command.txt command.txt screenshot*
         
+        COUNTER=0
         while true; do
-          echo "🔄 Checking..."
+          COUNTER=$((COUNTER + 1))
+          echo "🔄 Check #$COUNTER (every 60s)"
+          
           git pull origin main || true
           
           if [ -f command.txt ]; then
             CMD=$(cat command.txt)
-            echo "🚀 EXECUTING: $CMD"
+            echo "🚀 EXECUTE: $CMD"
             
-            LAST=$(cat last_command.txt 2>/dev/null || echo "")
-            if [ "$CMD" != "$LAST" ]; then
-              timeout 60 node bot.js "$CMD"
+            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CMD" ]; then
+              node bot.js "$CMD"
               
               if [ -f screenshot.png ]; then
-                git add screenshot.png screenshot-base64.txt .
-                git commit -m "📸 SINGLE BROWSER: $CMD" || true
+                git add screenshot.png screenshot-base64.txt bot.js .gitignore
+                git commit -m "📸 $CMD" || true
                 git push origin main || true
-                echo "✅ Screenshot COMMITTED & PUSHED!"
+                echo "✅ COMMIT & PUSH OK!"
+              else
+                echo "❌ No screenshot.png!"
               fi
               
               echo "$CMD" > last_command.txt
@@ -112,5 +118,5 @@ jobs:
             rm -f command.txt
           fi
           
-          sleep 5
+          sleep 60
         done
