@@ -69,10 +69,10 @@ jobs:
             timeout: 60000 
           });
           
-          // صبر هوشمند برای لود - FIX: page.waitForTimeout -> page.waitForTimeout ✅
-          await page.waitForTimeout(3000);
+          // صبر هوشمند - COMPATIBILITY FIX برای Chromium 149
+          await new Promise(r => setTimeout(r, 3000));
           await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-          await page.waitForTimeout(2000);
+          await new Promise(r => setTimeout(r, 2000));
           
           isInitialized = true;
           console.log("✅ مرورگر آماده");
@@ -89,7 +89,7 @@ jobs:
                 const [x, y] = cmd.slice(6).split(" ").map(Number);
                 console.log(`🖱️ کلیک: ${x},${y}`);
                 await page.mouse.click(x, y);
-                await page.waitForTimeout(3000); // ✅ درست شده
+                await new Promise(r => setTimeout(r, 3000)); // ✅ سازگار با همه نسخه‌ها
               }
             }
             
@@ -127,7 +127,7 @@ jobs:
               if [ "$CONTENT" != "exit" ]; then
                 echo "🆕 دستور جدید: $CONTENT"
                 node bot.js "$CONTENT"
-                git add screenshot* .gitignore
+                git add screenshot* .gitignore bot.js
                 git commit -m "📸$CONTENT" || true
                 git push || true
                 
@@ -139,7 +139,7 @@ jobs:
               fi
             else
               echo "🔄 دستور تکراری: $CONTENT - screenshot جدید"
-              node bot.js ""  # فقط screenshot بدون دستور
+              node bot.js ""
               git add screenshot*
               git commit -m "🔄 بروزرسانی $CONTENT" || true
               git push || true
