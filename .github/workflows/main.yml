@@ -9,7 +9,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: browser-actions/setup-chrome@v1
     - name: Install
-      run: npm init -y && npm i puppeteer puppeteer-extra puppeteer-extra-plugin-stealth puppeteer-extra-plugin-recaptcha
+      run: npm init -y && npm i puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
     - name: Setup
       run: |
         cat > .gitignore << EOF
@@ -30,7 +30,7 @@ jobs:
         puppeteer.use(StealthPlugin());
         
         (async(cmd) => {
-          console.log("📄 Command: " + cmd);
+          console.log("📄 Command: " + (cmd || "none"));
           
           const browser = await puppeteer.launch({
             headless: "new",
@@ -40,10 +40,7 @@ jobs:
               "--disable-dev-shm-usage",
               "--disable-accelerated-2d-canvas",
               "--no-first-run",
-              "--no-zygote",
               "--disable-gpu",
-              "--disable-web-security",
-              "--disable-features=VizDisplayCompositor",
               "--window-size=1920,1080"
             ],
             defaultViewport: { width: 1920, height: 1080 }
@@ -51,29 +48,15 @@ jobs:
           
           const page = await browser.newPage();
           
-          // Bypass detection
           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-          await page.setExtraHTTPHeaders({
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-          });
           
-          console.log("🌐 Navigating to chatgpt.com...");
+          console.log("🌐 Loading chatgpt.com...");
           await page.goto("https://chatgpt.com", { 
             waitUntil: 'domcontentloaded',
-            timeout: 90000 
+            timeout: 60000 
           });
           
-          // Wait for page to fully load
-          await page.waitForTimeout(8000);
-          
-          // Log page title to verify load
-          const title = await page.title();
-          console.log("📋 Page title: " + title);
+          await page.waitForTimeout(5000);
           
           if (cmd && cmd !== "exit") {
             if (cmd.startsWith("click ")) {
@@ -81,75 +64,78 @@ jobs:
                 const coords = cmd.slice(6).trim().split(",");
                 const x = parseInt(coords[0]);
                 const y = parseInt(coords[1]);
-                console.log(`🖱️ Clicking at (${x}, ${y})`);
+                console.log(`🖱️ Click at (${x}, ${y})`);
                 
-                // Move mouse first, then click
                 await page.mouse.move(x, y);
                 await page.waitForTimeout(500);
                 await page.mouse.click(x, y);
-                await page.waitForTimeout(3000);
-                
-                console.log("✅ Click executed");
+                await page.waitForTimeout(2000);
               } catch (e) {
                 console.log("❌ Click error: " + e.message);
               }
             }
           }
           
-          console.log("📸 Taking screenshot...");
           await page.screenshot({path: "screenshot.png", fullPage: true});
-          
           await browser.close();
           
-          const screenshotBuffer = fs.readFileSync("screenshot.png");
-          fs.writeFileSync("screenshot-base64.txt", screenshotBuffer.toString("base64"));
-          console.log("✅ Screenshot saved");
-        })(process.argv[2] || "");
+          fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
+          console.log("✅ Done");
+        })(process.argv[2]);
         EOF
     - name: LOOP
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        git config user.name bot
-        git config user.email bot@github.com
+        git config --global user.name "bot"
+        git config --global user.email "bot@github.com"
         
-        rm -f last_command.txt
+        rm -f last_command.txt command.txt screenshot*
         
+        echo "🤖 Bot started - create command.txt to begin"
+        
+        MAX_LOOPS=1000
         COUNTER=0
-        while true; do
-          git pull origin main
+        
+        while [ $COUNTER -lt $MAX_LOOPS ]; do
+          git pull origin main --no-edit || true
           
-          if [ -f command.txt ]; then
-            CONTENT=$(cat command.txt)
+          if [ -f "command.txt" ]; then
+            CONTENT=$(cat command.txt 2>/dev/null || echo "")
             
-            if [ ! -f last_command.txt ] || [ "$(cat last_command.txt)" != "$CONTENT" ]; then
-              if [ "$CONTENT" != "exit" ]; then
-                echo "🆕 New command: $CONTENT"
-                node bot.js "$CONTENT"
-                git add screenshot* .gitignore bot.js
-                git commit -m "📸 $CONTENT" || true
-                git push || true
-                
-                echo "$CONTENT" > last_command.txt
-                COUNTER=0
-              else
-                echo "🛑 Exit"
-                exit 0
+            if [ -f "last_command.txt" ]; then
+              LAST_CONTENT=$(cat last_command.txt 2>/dev/null || echo "")
+              if [ "$CONTENT" = "$LAST_CONTENT" ]; then
+                echo "🔄 Duplicate: $CONTENT"
+                sleep 30
+                COUNTER=$((COUNTER + 1))
+                continue
               fi
-            else
-              echo "🔄 Duplicate command"
-              COUNTER=$((COUNTER + 1))
             fi
+            
+            echo "🆕 New: $CONTENT"
+            
+            if [ "$CONTENT" = "exit" ]; then
+              echo "🛑 Exit command received"
+              exit 0
+            fi
+            
+            timeout 120 node bot.js "$CONTENT" || echo "⚠️ Bot timeout"
+            
+            if [ -f "screenshot.png" ]; then
+              git add screenshot.png screenshot-base64.txt .gitignore bot.js package* 2>/dev/null || true
+              git commit -m "📸 $CONTENT" || true
+              git push origin main || true
+            fi
+            
+            echo "$CONTENT" > last_command.txt
+            rm -f command.txt
+            COUNTER=0
           else
-            echo "⏳ Waiting for command.txt..."
+            echo "⏳ Waiting... ($COUNTER/$MAX_LOOPS)"
+            sleep 30
             COUNTER=$((COUNTER + 1))
           fi
-          
-          if [ $COUNTER -ge 30 ]; then
-            echo "🔄 Reset counter"
-            rm -f last_command.txt
-            COUNTER=0
-          fi
-          
-          sleep 60
         done
+        
+        echo "⏰ Max loops reached"
