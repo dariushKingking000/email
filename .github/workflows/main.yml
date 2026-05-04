@@ -19,7 +19,6 @@ jobs:
         package-lock.json
         screenshot.png
         screenshot-base64.txt
-        command.txt
         last_command.txt
         EOF
         
@@ -74,7 +73,7 @@ jobs:
           
           const data = fs.readFileSync("screenshot.png").toString("base64");
           fs.writeFileSync("screenshot-base64.txt", data);
-          console.log("🎉 COMPLETE - Files ready!");
+          console.log("🎉 COMPLETE!");
         })(process.argv[2]);
         EOF
     - name: LOOP
@@ -84,35 +83,34 @@ jobs:
         git config --global user.name "ScreenshotBot"
         git config --global user.email "bot@gh.com"
         
-        echo "🤖 Bot Active - 60s intervals"
-        rm -f last_command.txt command.txt screenshot*
+        echo "🤖 Bot Ready - 30s DEBUG"
+        rm -f command.txt screenshot*
         
         COUNTER=0
         while true; do
           COUNTER=$((COUNTER + 1))
-          echo "🔄 Check #$COUNTER (every 60s)"
+          echo "🔄 #$COUNTER"
+          
+          echo "--- DEBUG ---"
+          ls -la command.txt 2>/dev/null || echo "❌ NO command.txt"
           
           git pull origin main || true
           
-          if [ -f command.txt ]; then
+          if [ -f command.txt ] && [ -s command.txt ]; then
             CMD=$(cat command.txt)
-            echo "🚀 EXECUTE: $CMD"
-            
-            # همیشه اجرا کن - حتی اگه تکراری باشه
+            echo "🚀 CMD: $CMD"
             node bot.js "$CMD"
             
             if [ -f screenshot.png ]; then
-              git add screenshot.png screenshot-base64.txt bot.js .gitignore
+              git add screenshot.png screenshot-base64.txt
               git commit -m "📸 $CMD" || true
               git push origin main || true
-              echo "✅ COMMIT & PUSH OK!"
-            else
-              echo "❌ No screenshot.png!"
+              echo "✅ COMMIT & PUSH!"
             fi
             
-            # همیشه پاک کن
-            rm -f last_command.txt command.txt
+            rm -f command.txt
+          else
+            echo "⏳ Waiting..."
           fi
           
-          sleep 60
-        done
+          sleep
