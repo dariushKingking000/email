@@ -27,48 +27,131 @@ jobs:
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
         const fs = require("fs");
+        const path = require("path");
         
         let browser = null;
         let page = null;
+        let isBrowserReady = false;
         
-        async function initBrowser() {
-          if (browser) return;
-          console.log("🚀 راه‌اندازی مرورگر...");
-          browser = await puppeteer.launch({
-            headless: "new",
-            args: ["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage"]
-          });
-          page = await browser.newPage();
-          await page.setViewport({width: 1920, height: 1080});
-          await page.goto("https://chatgpt.com", {waitUntil: 'networkidle2', timeout: 60000});
-          await new Promise(r => setTimeout(r, 5000));
-          console.log("✅ مرورگر آماده");
+        async function safeCloseBrowser() {
+          try {
+            if (browser && browser.isConnected()) {
+              await browser.close();
+            }
+          } catch(e) {
+            console.log("⚠️ Browser already closed");
+          }
+          browser = null;
+          page = null;
+          isBrowserReady = false;
         }
         
-        (async(cmd) => {
-          console.log("📄 دستور: " + cmd);
+        async function initBrowser() {
+          try {
+            // اگر browser خراب است، ببندش
+            if (browser && !browser.isConnected()) {
+              await safeCloseBrowser();
+            }
+            
+            if (!browser || !isBrowserReady) {
+              console.log("🚀 راه‌اندازی مرورگر...");
+              await safeCloseBrowser();
+              
+              browser = await puppeteer.launch({
+                headless: "new",
+                args: [
+                  "--no-sandbox",
+                  "--disable-setuid-sandbox",
+                  "--disable-dev-shm-usage",
+                  "--disable-gpu",
+                  "--disable-web-security",
+                  "--disable-features=VizDisplayCompositor"
+                ],
+                timeout: 60000
+              });
+              
+              page = await browser.newPage();
+              await page.setViewport({ width: 1920, height: 1080 });
+              
+              console.log("🌐 بارگذاری ChatGPT...");
+              await page.goto("https://chatgpt.com", { 
+                waitUntil: 'networkidle2', 
+                timeout: 60000 
+              });
+              
+              // صبر اضافی برای لود کامل
+              await page.waitForTimeout(5000);
+              isBrowserReady = true;
+              console.log("✅ مرورگر کاملاً آماده!");
+            }
+          } catch(e) {
+            console.error("❌ خطای init:", e.message);
+            await safeCloseBrowser();
+            throw e;
+          }
+        }
+        
+        async function takeScreenshot() {
+          try {
+            if (!page || !isBrowserReady) {
+              throw new Error("Page not ready");
+            }
+            
+            console.log("📸 گرفتن اسکرین‌شات...");
+            const screenshotBuffer = await page.screenshot({
+              type: 'png',
+              fullPage: false,
+              clip: { x: 0, y: 0, width: 1920, height: 1080 }
+            });
+            
+            // ذخیره فایل
+            fs.writeFileSync("screenshot.png", screenshotBuffer);
+            fs.writeFileSync("screenshot-base64.txt", screenshotBuffer.toString('base64'));
+            
+            console.log(`✅ اسکرین‌شات ذخیره شد: ${screenshotBuffer.length} بایت`);
+            return true;
+          } catch(e) {
+            console.error("❌ خطای screenshot:", e.message);
+            return false;
+          }
+        }
+        
+        (async (cmd) => {
+          console.log("🎯 اجرای دستور:", cmd || "screenshot");
+          
           try {
             await initBrowser();
             
+            // اجرای دستور
             if (cmd?.startsWith("click ")) {
               const coords = cmd.slice(6).trim().split(",");
               const x = parseFloat(coords[0]);
               const y = parseFloat(coords[1]);
-              if (!isNaN(x) && !isNaN(y)) {
-                console.log(`🖱️ کلیک: ${x},${y}`);
+              
+              if (!isNaN(x) && !isNaN(y) && x > 0 && y > 0) {
+                console.log(`🖱️ کلیک در مختصات: ${x},${y}`);
                 await page.mouse.click(x, y);
-                await new Promise(r => setTimeout(r, 3000));
+                await page.waitForTimeout(2000); // صبر بعد کلیک
+              } else {
+                console.log("⚠️ مختصات نامعتبر");
               }
             }
             
-            await page.screenshot({path: "screenshot.png", fullPage: true});
-            fs.writeFileSync("screenshot-base64.txt", fs.readFileSync("screenshot.png").toString("base64"));
-            console.log("✅OK");
+            // همیشه screenshot بگیر
+            const screenshotOk = await takeScreenshot();
+            
+            if (screenshotOk) {
+              console.log("🎉 موفقیت کامل!");
+              process.exit(0);
+            } else {
+              console.log("⚠️ screenshot ناموفق");
+              process.exit(1);
+            }
             
           } catch(e) {
-            console.error("❌ خطا: " + e.message);
-            if (browser) await browser.close();
-            browser = null;
+            console.error("💥 خطای کلی:", e.message);
+            await safeCloseBrowser();
+            process.exit(1);
           }
         })(process.argv[2]);
         EOF
@@ -76,48 +159,55 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        git config user.name bot
-        git config user.email bot@github.com
+        git config user.name "Screenshot Bot"
+        git config user.email "bot@github.com"
         
-        echo "🔄 شروع لوپ..."
+        echo "🔄 شروع لوپ بی‌نهایت..."
         rm -f last_command.txt
         
         while true; do
-          echo "📥 git pull..."
+          echo "📥 git pull origin main..."
           git pull origin main || true
           
           if [ -f command.txt ]; then
-            CONTENT=$(cat command.txt)
+            CONTENT=$(cat command.txt | tr -d '\r\n')
             LAST_CMD=""
-            [ -f last_command.txt ] && LAST_CMD=$(cat last_command.txt)
+            [ -f last_command.txt ] && LAST_CMD=$(cat last_command.txt | tr -d '\r\n')
             
             echo "📋 command.txt: '$CONTENT'"
             echo "📋 last_command.txt: '$LAST_CMD'"
             
-            if [ "$CONTENT" != "exit" ]; then
+            if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "" ]; then
               if [ "$CONTENT" != "$LAST_CMD" ]; then
                 echo "🆕 دستور جدید: $CONTENT"
-                node bot.js "$CONTENT"
                 
-                if [ -f screenshot.png ]; then
+                # اجرای bot با timeout
+                timeout 120 node bot.js "$CONTENT" || {
+                  echo "⚠️ bot.js timeout یا خطا - restart"
+                }
+                
+                # چک دقیق فایل‌ها
+                if [ -f screenshot.png ] && [ -s screenshot.png ]; then
                   git add screenshot.png screenshot-base64.txt
-                  git commit -m "📸 $CONTENT" || true
-                  git push || true
-                  echo "✅ COMMIT/PUSH موفق"
+                  git commit -m "📸 Screenshot: $CONTENT" || true
+                  git push origin main || true
+                  echo "✅ COMMIT و PUSH موفق"
+                else
+                  echo "❌ screenshot.png وجود ندارد یا خالی است"
                 fi
                 
                 echo "$CONTENT" > last_command.txt
               else
-                echo "🔄 دستور تکراری: $CONTENT - منتظر تغییر"
+                echo "🔄 دستور تکراری - منتظر..."
               fi
-            else
-              echo "🛑 خروج"
+            elif [ "$CONTENT" = "exit" ]; then
+              echo "🛑 خروج از لوپ"
               exit 0
             fi
           else
-            echo "⏳ command.txt وجود ندارد"
+            echo "⏳ منتظر command.txt..."
           fi
           
-          echo "--- صبر 60 ثانیه ---"
-          sleep 60
+          echo "--- صبر 30 ثانیه ---"
+          sleep 30
         done
