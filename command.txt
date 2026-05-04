@@ -1,1 +1,1 @@
-click 90,115
+type test
