@@ -17,32 +17,15 @@ async function initBrowser() {
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-      "--disable-web-security",
-      "--disable-features=VizDisplayCompositor",
-      "--window-size=1920,1080",
-      "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      "--window-size=1920,1080"
     ]
   });
   page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080 });
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-  
   console.log("🌐 ChatGPT...");
-  await page.goto("https://chatgpt.com", { 
-    waitUntil: 'domcontentloaded', 
-    timeout: 60000 
-  });
-  
-  // Cloudflare bypass
-  await wait(5000);
-  try {
-    await page.waitForSelector('input[placeholder*="Message"]', { timeout: 30000 });
-    console.log("✅ ChatGPT آماده!");
-  } catch {
-    console.log("⚠️  CAPTCHA? Retry...");
-    await page.goto("https://chatgpt.com", { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await wait(10000);
-  }
+  await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 45000 });
+  await wait(4000);
+  console.log("✅ مرورگر آماده و persistent!");
 }
 
 async function takeScreenshot() {
@@ -55,6 +38,7 @@ async function takeScreenshot() {
   console.log(`✅ Visible: ${fs.statSync('screenshot.png').size}b`);
 }
 
+// MAIN LOOP
 (async () => {
   await initBrowser();
   
@@ -75,12 +59,14 @@ async function takeScreenshot() {
           if (!isNaN(x) && !isNaN(y)) {
             console.log(`🖱️ Click ${x},${y}`);
             await page.mouse.click(x, y);
-            await wait(3000);  // بیشتر wait
+            await wait(2000);
           }
         }
         
         await takeScreenshot();
         fs.writeFileSync('response.txt', `✅ ${cmd} تمام!`);
+        
+        // 👇 CRITICAL: پاک کردن pipe قبل response
         fs.unlinkSync('command_pipe.txt');
       }
     } catch(e) {
