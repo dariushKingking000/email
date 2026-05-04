@@ -9,7 +9,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: browser-actions/setup-chrome@v1
     - name: Install
-      run: npm init -y && npm i puppeteer
+      run: npm init -y && npm i puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
     - name: Setup
       run: |
         cat > .gitignore << EOF
@@ -43,15 +43,32 @@ jobs:
               "--disable-setuid-sandbox",
               "--disable-dev-shm-usage",
               "--disable-gpu",
-              "--window-size=1920,1080"
+              "--disable-web-security",
+              "--disable-features=VizDisplayCompositor",
+              "--window-size=1920,1080",
+              "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             ]
           });
           page = await browser.newPage();
           await page.setViewport({ width: 1920, height: 1080 });
+          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          
           console.log("🌐 ChatGPT...");
-          await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 45000 });
-          await wait(4000);
-          console.log("✅ مرورگر آماده و persistent!");
+          await page.goto("https://chatgpt.com", { 
+            waitUntil: 'domcontentloaded', 
+            timeout: 60000 
+          });
+          
+          // Cloudflare bypass
+          await wait(5000);
+          try {
+            await page.waitForSelector('input[placeholder*="Message"]', { timeout: 30000 });
+            console.log("✅ ChatGPT آماده!");
+          } catch {
+            console.log("⚠️  CAPTCHA? Retry...");
+            await page.goto("https://chatgpt.com", { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await wait(10000);
+          }
         }
         
         async function takeScreenshot() {
@@ -64,7 +81,6 @@ jobs:
           console.log(`✅ Visible: ${fs.statSync('screenshot.png').size}b`);
         }
         
-        // MAIN LOOP
         (async () => {
           await initBrowser();
           
@@ -85,14 +101,12 @@ jobs:
                   if (!isNaN(x) && !isNaN(y)) {
                     console.log(`🖱️ Click ${x},${y}`);
                     await page.mouse.click(x, y);
-                    await wait(2000);
+                    await wait(3000);  // بیشتر wait
                   }
                 }
                 
                 await takeScreenshot();
                 fs.writeFileSync('response.txt', `✅ ${cmd} تمام!`);
-                
-                // 👇 CRITICAL: پاک کردن pipe قبل response
                 fs.unlinkSync('command_pipe.txt');
               }
             } catch(e) {
@@ -110,13 +124,13 @@ jobs:
         git config user.name "Screenshot Bot"
         git config user.email "bot@github.com"
         
-        echo "🔄 لوپ شروع... (فیکس شده)"
+        echo "🔄 لوپ شروع... (Cloudflare فیکس)"
         rm -f last_command.txt command_pipe.txt response.txt
         
         node bot.js &
         BOT_PID=$!
         echo "🤖 Bot PID: $BOT_PID"
-        sleep 20
+        sleep 30  # بیشتر wait
         
         while true; do
           git pull origin main || true
@@ -128,13 +142,10 @@ jobs:
             if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
               echo "🆕 $CONTENT"
               
-              # Clear old files
               rm -f command_pipe.txt response.txt
-              
               echo "$CONTENT" > command_pipe.txt
               
-              # Wait response
-              for i in {1..60}; do
+              for i in {1..90}; do  # 90s timeout
                 if [ -f response.txt ]; then
                   cat response.txt
                   rm -f response.txt command_pipe.txt
@@ -143,9 +154,8 @@ jobs:
                 sleep 1
               done
               
-              sleep 2  # 👇 EXTRA wait برای screenshot کامل
+              sleep 3
               
-              # Check files
               for file in screenshot.png screenshot-full.png screenshot-base64.txt; do
                 if [ -f "$file" ] && [ -s "$file" ]; then
                   echo "📁 $file: $(stat -c %s "$file") بایت"
