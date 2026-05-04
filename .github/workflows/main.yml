@@ -30,6 +30,10 @@ jobs:
         let browser = null;
         let page = null;
         
+        function wait(ms) {
+          return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
         async function initBrowser() {
           console.log("🚀 راه‌اندازی مرورگر...");
           browser = await puppeteer.launch({
@@ -46,16 +50,18 @@ jobs:
           await page.setViewport({ width: 1920, height: 1080 });
           console.log("🌐 ChatGPT...");
           await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 45000 });
-          await page.waitForTimeout(4000);
+          await wait(4000);
           console.log("✅ مرورگر آماده و persistent!");
         }
         
         async function takeScreenshot() {
+          console.log("📸 Screenshot...");
           await page.screenshot({ path: 'screenshot.png', type: 'png' });
           await page.screenshot({ path: 'screenshot-full.png', fullPage: true, type: 'png' });
           const buffer = await page.screenshot({ type: 'png' });
           fs.writeFileSync("screenshot-base64.txt", buffer.toString('base64'));
-          console.log("📸 Screenshot OK");
+          console.log(`✅ Full: ${fs.statSync('screenshot-full.png').size}b`);
+          console.log(`✅ Visible: ${fs.statSync('screenshot.png').size}b`);
         }
         
         // MAIN LOOP - Single process forever
@@ -79,7 +85,7 @@ jobs:
                   if (!isNaN(x) && !isNaN(y)) {
                     console.log(`🖱️ Click ${x},${y}`);
                     await page.mouse.click(x, y);
-                    await page.waitForTimeout(2000);
+                    await wait(2000);
                   }
                 }
                 
@@ -91,7 +97,7 @@ jobs:
               console.error("❌ خطا:", e.message);
             }
             
-            await page.waitForTimeout(1000);
+            await wait(1000);
           }
         })();
         EOF
@@ -105,13 +111,13 @@ jobs:
         echo "🔄 لوپ شروع... (مرورگر persistent)"
         rm -f last_command.txt command_pipe.txt response.txt
         
-        # START PERSISTENT BOT (background)
+        # START PERSISTENT BOT
         node bot.js &
         BOT_PID=$!
         echo "🤖 Bot PID: $BOT_PID"
         
-        # Wait for bot ready
-        sleep 10
+        # Wait for ready
+        sleep 20
         
         while true; do
           git pull origin main || true
@@ -123,11 +129,10 @@ jobs:
             if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
               echo "🆕 $CONTENT"
               
-              # Send command to persistent bot
               echo "$CONTENT" > command_pipe.txt
               
-              # Wait for response (max 30s)
-              for i in {1..30}; do
+              # Wait response (60s max)
+              for i in {1..60}; do
                 if [ -f response.txt ]; then
                   cat response.txt
                   rm -f response.txt
@@ -136,14 +141,14 @@ jobs:
                 sleep 1
               done
               
-              # Check screenshots
+              # Check files
               for file in screenshot.png screenshot-full.png screenshot-base64.txt; do
                 if [ -f "$file" ] && [ -s "$file" ]; then
                   echo "📁 $file: $(stat -c %s "$file") بایت"
                 fi
               done
               
-              # Commit & Push
+              # Commit
               git add -f screenshot*.png screenshot-base64.txt || true
               git add -f bot.js .gitignore || true
               
@@ -162,5 +167,4 @@ jobs:
           sleep 15
         done
         
-        # Cleanup
-        kill $BOT_PID || true
+        kill $BOT_PID 2>/dev/null || true
