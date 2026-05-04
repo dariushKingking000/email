@@ -38,7 +38,7 @@ async function takeScreenshot() {
   console.log(`✅ Visible: ${fs.statSync('screenshot.png').size}b`);
 }
 
-// MAIN LOOP - Single process forever
+// MAIN LOOP
 (async () => {
   await initBrowser();
   
@@ -65,12 +65,14 @@ async function takeScreenshot() {
         
         await takeScreenshot();
         fs.writeFileSync('response.txt', `✅ ${cmd} تمام!`);
+        
+        // 👇 CRITICAL: پاک کردن pipe قبل response
         fs.unlinkSync('command_pipe.txt');
       }
     } catch(e) {
       console.error("❌ خطا:", e.message);
     }
     
-    await wait(1000);
+    await wait(500);
   }
 })();
