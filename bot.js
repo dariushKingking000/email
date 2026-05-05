@@ -33,7 +33,7 @@ async function initBrowser() {
     window.chrome = { runtime: {} };
   });
   
-  await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 60000 });
+  await page.goto("https://app.n8n.cloud/register", { waitUntil: 'networkidle0', timeout: 60000 });
   await wait(10000);
   await page.mouse.move(100, 100);
   console.log("✅ آماده!");
@@ -68,8 +68,8 @@ async function recordVideoWithActions(commands) {
   
   const fps = 10;
   const cmdCount = commands.length;
-  const baseDelayPerCmd = 5000;  // 👈 5 ثانیه برای هر دستور
-  const extraDelayPerCmd = Math.max(0, cmdCount - 6) * 5000;
+  const baseDelayPerCmd = 5000;  // 👈 پایه 5s هر دستور
+  const extraDelayPerCmd = Math.max(0, cmdCount - 6) * 5000;  // 👈 بعد 6: +5s هر کدام
   const delayPerCmd = baseDelayPerCmd + extraDelayPerCmd;
   const totalDuration = cmdCount * delayPerCmd;
   const totalFrames = Math.floor(totalDuration / 1000 * fps);
