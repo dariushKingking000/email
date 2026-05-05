@@ -33,7 +33,7 @@ async function initBrowser() {
     window.chrome = { runtime: {} };
   });
   
-  await page.goto("https://app.n8n.cloud/register", { waitUntil: 'networkidle0', timeout: 60000 });
+  await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 60000 });
   await wait(10000);
   await page.mouse.move(100, 100);
   console.log("✅ آماده!");
@@ -68,20 +68,19 @@ async function recordVideoWithActions(commands) {
   
   const fps = 10;
   const cmdCount = commands.length;
-  const baseDelayPerCmd = 5000;  // 👈 پایه 5s هر دستور
-  const extraDelayPerCmd = Math.max(0, cmdCount - 6) * 5000;  // 👈 بعد 6: +5s هر کدام
-  const delayPerCmd = baseDelayPerCmd + extraDelayPerCmd;
+  const delayPerCmd = cmdCount === 3 ? 10000 : cmdCount === 2 ? 15000 : 30000;  // 10s/15s/30s
   const totalDuration = cmdCount * delayPerCmd;
   const totalFrames = Math.floor(totalDuration / 1000 * fps);
   
-  console.log(`📊 ${cmdCount} دستور (${extraDelayPerCmd/1000}s extra) - هر کدام ${delayPerCmd/1000}s = ${totalDuration/1000}s`);
+  console.log(`📊 ${cmdCount} دستور - هر کدام ${delayPerCmd/1000}s`);
   
   let frameIndex = 0;
   
+  // 👇 هر دستور: 1/3 قبل + Action + 2/3 بعد
   for(let cmdIndex = 0; cmdIndex < cmdCount; cmdIndex++) {
     const cmd = commands[cmdIndex];
     
-    // 1/3 قبل action
+    // 1/3 قبل action (frames)
     const preFrames = Math.floor((delayPerCmd / 3) / 1000 * fps);
     for(let i = 0; i < preFrames; i++) {
       await page.screenshot({ path: `frames/frame_${frameIndex.toString().padStart(4,'0')}.png` });
@@ -89,7 +88,7 @@ async function recordVideoWithActions(commands) {
       await wait(100);
     }
     
-    // ACTION وسط!
+    // 👇 ACTION وسط!
     await executeCommand(cmd);
     
     // 2/3 بعد action
@@ -101,9 +100,10 @@ async function recordVideoWithActions(commands) {
     }
   }
   
+  // 👇 FFmpeg
   const output = 'video.mp4';
   try {
-    execSync(`ffmpeg -y -r ${fps} -i frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 23 -preset fast ${output}`, { timeout: 60000 });
+    execSync(`ffmpeg -y -r ${fps} -i frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 23 -preset fast ${output}`, { timeout: 45000 });
     console.log(`✅ Video ${totalFrames} frames: ${fs.statSync(output).size / 1024 / 1024}MB`);
     fs.rmSync('frames', { recursive: true, force: true });
   } catch(e) {
@@ -125,13 +125,14 @@ async function recordVideoWithActions(commands) {
           process.exit(0);
         }
         
+        // 👇 Split به خطوط (تا 3 دستور)
         const commands = content.split('\n')
           .map(line => line.trim())
-          .filter(line => line && (line.startsWith('click ') || line.startsWith('type ') || line === 'enter'))
-          .slice(0, 20);
+          .filter(line => line && (line.startsWith('click ') || line.startsWith('type ') || line === 'enter'));
         
-        console.log(`📝 ${commands.length} دستور (max 20)`);
+        console.log(`📝 ${commands.length} دستور پیدا شد`);
         
+        // 👇 همه actions وسط video!
         await recordVideoWithActions(commands);
         await takeScreenshot();
         
