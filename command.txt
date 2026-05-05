@@ -1,3 +1,3 @@
-click 820,400
-type 714421
-click 800,500
+click 1000,260
+type kingkingplm01@gmail.com
+click 900,333
