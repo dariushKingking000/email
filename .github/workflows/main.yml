@@ -16,7 +16,7 @@ jobs:
     - name: Install Chrome + FFmpeg
       run: |
         sudo apt-get update
-        sudo apt-get install -y wget gnupg xvfb x11-xkb-utils ffmpeg
+        sudo apt-get install -y wget gnupg xvfb x11-xkb-utils ffmpeg bc
         wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
         echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
         sudo apt-get update
@@ -109,17 +109,16 @@ jobs:
           
           const fps = 10;
           const cmdCount = commands.length;
-          const baseDelay = 10000;  // پایه 10s هر دستور
-          const extraDelay = Math.max(0, cmdCount - 6) * 5000;  // بعد 6: +5s هر کدام
-          const delayPerCmd = baseDelay + extraDelay;
+          const baseDelayPerCmd = 5000;  // 👈 پایه 5s هر دستور
+          const extraDelayPerCmd = Math.max(0, cmdCount - 6) * 5000;  // 👈 بعد 6: +5s هر کدام
+          const delayPerCmd = baseDelayPerCmd + extraDelayPerCmd;
           const totalDuration = cmdCount * delayPerCmd;
           const totalFrames = Math.floor(totalDuration / 1000 * fps);
           
-          console.log(`📊 ${cmdCount} دستور (${extraDelay/1000}s extra) - هر کدام ${delayPerCmd/1000}s = ${totalDuration/1000}s`);
+          console.log(`📊 ${cmdCount} دستور (${extraDelayPerCmd/1000}s extra) - هر کدام ${delayPerCmd/1000}s = ${totalDuration/1000}s`);
           
           let frameIndex = 0;
           
-          // 👇 هر دستور: 1/3 قبل + Action + 2/3 بعد
           for(let cmdIndex = 0; cmdIndex < cmdCount; cmdIndex++) {
             const cmd = commands[cmdIndex];
             
@@ -131,7 +130,7 @@ jobs:
               await wait(100);
             }
             
-            // 👇 ACTION وسط!
+            // ACTION وسط!
             await executeCommand(cmd);
             
             // 2/3 بعد action
@@ -143,7 +142,6 @@ jobs:
             }
           }
           
-          // 👇 FFmpeg
           const output = 'video.mp4';
           try {
             execSync(`ffmpeg -y -r ${fps} -i frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 23 -preset fast ${output}`, { timeout: 60000 });
@@ -168,11 +166,10 @@ jobs:
                   process.exit(0);
                 }
                 
-                // 👇 Split تا 20 خط
                 const commands = content.split('\n')
                   .map(line => line.trim())
                   .filter(line => line && (line.startsWith('click ') || line.startsWith('type ') || line === 'enter'))
-                  .slice(0, 20);  // 👈 max 20
+                  .slice(0, 20);
                 
                 console.log(`📝 ${commands.length} دستور (max 20)`);
                 
@@ -204,7 +201,7 @@ jobs:
         
         rm -f last_command.txt command_pipe.txt response.txt
         
-        timeout 14400 node bot.js &  # 👈 4h برای video طولانی
+        timeout 14400 node bot.js &
         BOT_PID=$!
         echo "🤖 $BOT_PID"
         sleep 45
@@ -221,7 +218,7 @@ jobs:
               rm -f command_pipe.txt response.txt
               echo "$CONTENT" > command_pipe.txt
               
-              for i in {1..600}; do  # 👈 10min max
+              for i in {1..600}; do
                 if [ -f response.txt ]; then
                   cat response.txt
                   rm -f response.txt command_pipe.txt
@@ -241,7 +238,7 @@ jobs:
               git add -f screenshot*.png screenshot-base64.txt video.mp4 bot.js .gitignore || true
               
               if ! git diff --staged --quiet; then
-                git commit -m "🎥 ${commands.length} Commands + Video | $(date +'%Y-%m-%d %H:%M')" || true
+                git commit -m "Multi-Commands + Video $(date +'%Y-%m-%d %H:%M')" || true
                 git push origin main -f || true
                 echo "✅ Push!"
               fi
