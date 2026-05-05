@@ -41,10 +41,6 @@ async function initBrowser() {
 
 async function takeScreenshot() {
   console.log("📸 Screenshot...");
-  // 👇 پاک کردن فایل‌های قبلی
-  ['screenshot.png', 'screenshot-full.png', 'screenshot-base64.txt'].forEach(f => {
-    if (fs.existsSync(f)) fs.unlinkSync(f);
-  });
   await page.screenshot({ path: 'screenshot.png', type: 'png' });
   await page.screenshot({ path: 'screenshot-full.png', fullPage: true, type: 'png' });
   const buffer = await page.screenshot({ type: 'png' });
@@ -68,10 +64,12 @@ async function executeCommand(cmd) {
 
 async function recordVideoWithActions(commands) {
   console.log("🎥 Video + Multi Actions...");
-  // 👇 پاک کردن frames قبلی + video
-  if (fs.existsSync('frames')) fs.rmSync('frames', { recursive: true, force: true });
-  if (fs.existsSync('video.mp4')) fs.unlinkSync('video.mp4');
   
+  // 👈 FIX: پاک کردن frames قدیمی قبل از هر بار
+  if (fs.existsSync('frames')) {
+    fs.rmSync('frames', { recursive: true, force: true });
+    console.log("🧹 frames پاک شد");
+  }
   fs.mkdirSync('frames', { recursive: true });
   
   const fps = 10;
