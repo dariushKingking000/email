@@ -109,8 +109,8 @@ jobs:
           
           const fps = 10;
           const cmdCount = commands.length;
-          const baseDelayPerCmd = 5000;  // 👈 پایه 5s هر دستور
-          const extraDelayPerCmd = Math.max(0, cmdCount - 6) * 5000;  // 👈 بعد 6: +5s هر کدام
+          const baseDelayPerCmd = 5000;  // 👈 5 ثانیه برای هر دستور
+          const extraDelayPerCmd = Math.max(0, cmdCount - 6) * 5000;
           const delayPerCmd = baseDelayPerCmd + extraDelayPerCmd;
           const totalDuration = cmdCount * delayPerCmd;
           const totalFrames = Math.floor(totalDuration / 1000 * fps);
