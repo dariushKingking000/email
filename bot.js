@@ -47,21 +47,8 @@ async function takeScreenshot() {
   fs.writeFileSync("screenshot-base64.txt", buffer.toString('base64'));
 }
 
-async function recordVideoWithAction(cmd) {
-  console.log("🎥 30s ویدیو + Action وسط...");
-  fs.mkdirSync('frames', { recursive: true });
-  
-  const fps = 10;
-  const totalFrames = 300;  // 30s
-  
-  // 👇 10s اول (100 frames) - قبل action
-  for(let i = 0; i < 100; i++) {
-    await page.screenshot({ path: `frames/frame_${i.toString().padStart(4,'0')}.png` });
-    await wait(100);
-  }
-  
-  // 👇 وسط: ACTION!
-  console.log("🎬 ACTION!");
+async function executeCommand(cmd) {
+  console.log(`🔧 ${cmd}`);
   if (cmd.startsWith("click ")) {
     const [x, y] = cmd.slice(6).trim().split(",").map(Number);
     await page.mouse.move(x + Math.random()*10-5, y + Math.random()*10-5);
@@ -73,22 +60,51 @@ async function recordVideoWithAction(cmd) {
   } else if (cmd === "enter") {
     await page.keyboard.press('Enter', { delay: 50 });
   }
+}
+
+async function recordVideoWithActions(commands) {
+  console.log("🎥 Video + Multi Actions...");
+  fs.mkdirSync('frames', { recursive: true });
   
-  // 👇 10s delay بعد action
-  console.log("⏳ 10s...");
-  await wait(10000);
+  const fps = 10;
+  const cmdCount = commands.length;
+  const delayPerCmd = cmdCount === 3 ? 10000 : cmdCount === 2 ? 15000 : 30000;  // 10s/15s/30s
+  const totalDuration = cmdCount * delayPerCmd;
+  const totalFrames = Math.floor(totalDuration / 1000 * fps);
   
-  // 👇 10s آخر (100 frames)
-  for(let i = 100; i < totalFrames; i++) {
-    await page.screenshot({ path: `frames/frame_${i.toString().padStart(4,'0')}.png` });
-    await wait(100);
+  console.log(`📊 ${cmdCount} دستور - هر کدام ${delayPerCmd/1000}s`);
+  
+  let frameIndex = 0;
+  
+  // 👇 هر دستور: 1/3 قبل + Action + 2/3 بعد
+  for(let cmdIndex = 0; cmdIndex < cmdCount; cmdIndex++) {
+    const cmd = commands[cmdIndex];
+    
+    // 1/3 قبل action (frames)
+    const preFrames = Math.floor((delayPerCmd / 3) / 1000 * fps);
+    for(let i = 0; i < preFrames; i++) {
+      await page.screenshot({ path: `frames/frame_${frameIndex.toString().padStart(4,'0')}.png` });
+      frameIndex++;
+      await wait(100);
+    }
+    
+    // 👇 ACTION وسط!
+    await executeCommand(cmd);
+    
+    // 2/3 بعد action
+    const postFrames = Math.floor((delayPerCmd * 2 / 3) / 1000 * fps);
+    for(let i = 0; i < postFrames; i++) {
+      await page.screenshot({ path: `frames/frame_${frameIndex.toString().padStart(4,'0')}.png` });
+      frameIndex++;
+      await wait(100);
+    }
   }
   
   // 👇 FFmpeg
   const output = 'video.mp4';
   try {
-    execSync(`ffmpeg -y -r ${fps} -i frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 23 -preset fast ${output}`, { timeout: 30000 });
-    console.log(`✅ Video: ${fs.statSync(output).size / 1024 / 1024}MB`);
+    execSync(`ffmpeg -y -r ${fps} -i frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 23 -preset fast ${output}`, { timeout: 45000 });
+    console.log(`✅ Video ${totalFrames} frames: ${fs.statSync(output).size / 1024 / 1024}MB`);
     fs.rmSync('frames', { recursive: true, force: true });
   } catch(e) {
     console.error("❌ FFmpeg:", e.message);
@@ -101,19 +117,26 @@ async function recordVideoWithAction(cmd) {
   while (true) {
     try {
       if (fs.existsSync('command_pipe.txt')) {
-        const cmd = fs.readFileSync('command_pipe.txt', 'utf8').trim();
-        console.log(`🆕 ${cmd}`);
+        let content = fs.readFileSync('command_pipe.txt', 'utf8').trim();
+        console.log(`🆕 ${content}`);
         
-        if (cmd === "exit") {
+        if (content === "exit") {
           if (browser) await browser.close();
           process.exit(0);
         }
         
-        // 👇 Action دقیقاً وسط 30s video!
-        await recordVideoWithAction(cmd);
+        // 👇 Split به خطوط (تا 3 دستور)
+        const commands = content.split('\n')
+          .map(line => line.trim())
+          .filter(line => line && (line.startsWith('click ') || line.startsWith('type ') || line === 'enter'));
+        
+        console.log(`📝 ${commands.length} دستور پیدا شد`);
+        
+        // 👇 همه actions وسط video!
+        await recordVideoWithActions(commands);
         await takeScreenshot();
         
-        fs.writeFileSync('response.txt', `✅ ${cmd} + Video OK!`);
+        fs.writeFileSync('response.txt', `✅ ${commands.length} دستور OK!`);
         fs.unlinkSync('command_pipe.txt');
       }
     } catch(e) {
