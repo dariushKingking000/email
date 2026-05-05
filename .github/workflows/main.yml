@@ -42,7 +42,6 @@ jobs:
         const puppeteer = require("puppeteer");
         const fs = require("fs");
         const { execSync } = require("child_process");
-        const path = require("path");
         
         let browser = null;
         let page = null;
@@ -75,7 +74,7 @@ jobs:
             window.chrome = { runtime: {} };
           });
           
-          await page.goto("https://app.n8n.cloud/register", { waitUntil: 'networkidle0', timeout: 60000 });
+          await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 60000 });
           await wait(10000);
           await page.mouse.move(100, 100);
           console.log("✅ آماده!");
@@ -89,34 +88,51 @@ jobs:
           fs.writeFileSync("screenshot-base64.txt", buffer.toString('base64'));
         }
         
-        async function recordVideo(duration = 30000) {
-          console.log("🎥 ضبط 30s ویدیو...");
+        async function recordVideoWithAction(cmd) {
+          console.log("🎥 30s ویدیو + Action وسط...");
           fs.mkdirSync('frames', { recursive: true });
           
-          const fps = 10;  // 👈 کیفیت متوسط (10fps)
-          const totalFrames = Math.floor(duration / 1000 * fps);
+          const fps = 10;
+          const totalFrames = 300;  // 30s
           
-          for(let i = 0; i < totalFrames; i++) {
-            const framePath = `frames/frame_${i.toString().padStart(4,'0')}.png`;
-            await page.screenshot({ path: framePath });
-            
-            if(i % 10 === 0) {
-              console.log(`🎥 Frame ${i}/${totalFrames}`);
-            }
-            
-            await wait(1000 / fps);
+          // 👇 10s اول (100 frames) - قبل action
+          for(let i = 0; i < 100; i++) {
+            await page.screenshot({ path: `frames/frame_${i.toString().padStart(4,'0')}.png` });
+            await wait(100);
           }
           
-          // 👇 FFmpeg: frames → MP4
+          // 👇 وسط: ACTION!
+          console.log("🎬 ACTION!");
+          if (cmd.startsWith("click ")) {
+            const [x, y] = cmd.slice(6).trim().split(",").map(Number);
+            await page.mouse.move(x + Math.random()*10-5, y + Math.random()*10-5);
+            await wait(100);
+            await page.mouse.click(x, y, { delay: 50 });
+          } else if (cmd.startsWith("type ")) {
+            const text = cmd.slice(5).trim();
+            await page.keyboard.type(text, { delay: 80 });
+          } else if (cmd === "enter") {
+            await page.keyboard.press('Enter', { delay: 50 });
+          }
+          
+          // 👇 10s delay بعد action
+          console.log("⏳ 10s...");
+          await wait(10000);
+          
+          // 👇 10s آخر (100 frames)
+          for(let i = 100; i < totalFrames; i++) {
+            await page.screenshot({ path: `frames/frame_${i.toString().padStart(4,'0')}.png` });
+            await wait(100);
+          }
+          
+          // 👇 FFmpeg
           const output = 'video.mp4';
           try {
             execSync(`ffmpeg -y -r ${fps} -i frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 23 -preset fast ${output}`, { timeout: 30000 });
             console.log(`✅ Video: ${fs.statSync(output).size / 1024 / 1024}MB`);
-            
-            // 👇 پاک کردن frames
             fs.rmSync('frames', { recursive: true, force: true });
           } catch(e) {
-            console.error("❌ FFmpeg خطا:", e.message);
+            console.error("❌ FFmpeg:", e.message);
           }
         }
         
@@ -134,28 +150,9 @@ jobs:
                   process.exit(0);
                 }
                 
-                if (cmd.startsWith("click ")) {
-                  const [x, y] = cmd.slice(6).trim().split(",").map(Number);
-                  await page.mouse.move(x + Math.random()*10-5, y + Math.random()*10-5);
-                  await wait(100);
-                  await page.mouse.click(x, y, { delay: 50 });
-                }
-                
-                if (cmd.startsWith("type ")) {
-                  const text = cmd.slice(5).trim();
-                  await page.keyboard.type(text, { delay: 80 });
-                }
-                
-                if (cmd === "enter") {
-                  await page.keyboard.press('Enter', { delay: 50 });
-                }
-                
-                console.log("⏳ 10s...");
-                await wait(10000);
-                
-                // 👇 هر دو: Screenshot + Video!
+                // 👇 Action دقیقاً وسط 30s video!
+                await recordVideoWithAction(cmd);
                 await takeScreenshot();
-                await recordVideo(30000);  // 30s ویدیو
                 
                 fs.writeFileSync('response.txt', `✅ ${cmd} + Video OK!`);
                 fs.unlinkSync('command_pipe.txt');
@@ -199,7 +196,7 @@ jobs:
               rm -f command_pipe.txt response.txt
               echo "$CONTENT" > command_pipe.txt
               
-              for i in {1..180}; do  # 👈 180s برای video
+              for i in {1..180}; do
                 if [ -f response.txt ]; then
                   cat response.txt
                   rm -f response.txt command_pipe.txt
@@ -208,7 +205,6 @@ jobs:
                 sleep 1
               done
               
-              # 👇 سایزها
               for f in screenshot-full.png video.mp4; do
                 if [ -f "$f" ]; then
                   SIZE=$(stat -c %s "$f")
