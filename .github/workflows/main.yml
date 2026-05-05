@@ -82,10 +82,6 @@ jobs:
         
         async function takeScreenshot() {
           console.log("📸 Screenshot...");
-          // 👇 پاک کردن فایل‌های قبلی
-          ['screenshot.png', 'screenshot-full.png', 'screenshot-base64.txt'].forEach(f => {
-            if (fs.existsSync(f)) fs.unlinkSync(f);
-          });
           await page.screenshot({ path: 'screenshot.png', type: 'png' });
           await page.screenshot({ path: 'screenshot-full.png', fullPage: true, type: 'png' });
           const buffer = await page.screenshot({ type: 'png' });
@@ -109,10 +105,12 @@ jobs:
         
         async function recordVideoWithActions(commands) {
           console.log("🎥 Video + Multi Actions...");
-          // 👇 پاک کردن frames قبلی + video
-          if (fs.existsSync('frames')) fs.rmSync('frames', { recursive: true, force: true });
-          if (fs.existsSync('video.mp4')) fs.unlinkSync('video.mp4');
           
+          // 👈 FIX: پاک کردن frames قدیمی قبل از هر بار
+          if (fs.existsSync('frames')) {
+            fs.rmSync('frames', { recursive: true, force: true });
+            console.log("🧹 frames پاک شد");
+          }
           fs.mkdirSync('frames', { recursive: true });
           
           const fps = 10;
@@ -201,7 +199,7 @@ jobs:
         git config user.name "Screenshot Bot"
         git config user.email "bot@github.com"
         
-        rm -f last_command.txt command_pipe.txt response.txt screenshot*.png screenshot-base64.txt video.mp4
+        rm -f last_command.txt command_pipe.txt response.txt
         
         timeout 7200 node bot.js &
         BOT_PID=$!
@@ -217,7 +215,7 @@ jobs:
             
             if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
               echo "🆕 $CONTENT"
-              rm -f command_pipe.txt response.txt screenshot*.png screenshot-base64.txt video.mp4
+              rm -f command_pipe.txt response.txt
               echo "$CONTENT" > command_pipe.txt
               
               for i in {1..300}; do
