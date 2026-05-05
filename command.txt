@@ -1,3 +1,3 @@
 click 820,270
-tpye kingkingplm01@gmail.com
+type kingkingplm01@gmail.com
 click 800,320
