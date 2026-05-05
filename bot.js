@@ -16,11 +16,8 @@ async function initBrowser() {
     executablePath: '/usr/bin/google-chrome-stable',
     args: [
       '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
-      '--disable-gpu','--disable-web-security','--disable-features=VizDisplayCompositor',
-      '--disable-blink-features=AutomationControlled','--disable-extensions',
-      '--disable-plugins','--disable-images','--no-first-run','--no-service-autorun',
-      '--password-store=basic','--window-size=1920,1080',
-      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      '--no-first-run','--no-service-autorun',
+      '--password-store=basic','--window-size=1920,1080'
     ]
   });
   
@@ -33,7 +30,7 @@ async function initBrowser() {
     window.chrome = { runtime: {} };
   });
   
-  await page.goto("https://app.n8n.cloud/register", { waitUntil: 'networkidle0', timeout: 60000 });
+  await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 60000 });
   await wait(10000);
   await page.mouse.move(100, 100);
   console.log("✅ آماده!");
