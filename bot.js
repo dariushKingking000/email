@@ -33,7 +33,7 @@ async function initBrowser() {
     window.chrome = { runtime: {} };
   });
   
-  await page.goto("https://app.n8n.cloud/register", { waitUntil: 'networkidle0', timeout: 60000 });
+  await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 60000 });
   await wait(10000);
   await page.mouse.move(100, 100);
   console.log("✅ آماده!");
@@ -65,18 +65,15 @@ async function executeCommand(cmd) {
 async function recordVideoWithActions(commands) {
   console.log("🎥 Video + Multi Actions...");
   
-  // 👈 FIX: پاک کردن frames قدیمی قبل از هر بار
+  // پاک کردن frames
   if (fs.existsSync('frames')) {
     fs.rmSync('frames', { recursive: true, force: true });
-    console.log("🧹 frames پاک شد");
   }
   fs.mkdirSync('frames', { recursive: true });
   
   const fps = 10;
   const cmdCount = commands.length;
   const delayPerCmd = cmdCount === 3 ? 10000 : cmdCount === 2 ? 15000 : 30000;
-  const totalDuration = cmdCount * delayPerCmd;
-  const totalFrames = Math.floor(totalDuration / 1000 * fps);
   
   console.log(`📊 ${cmdCount} دستور - هر کدام ${delayPerCmd/1000}s`);
   
@@ -85,27 +82,30 @@ async function recordVideoWithActions(commands) {
   for(let cmdIndex = 0; cmdIndex < cmdCount; cmdIndex++) {
     const cmd = commands[cmdIndex];
     
-    const preFrames = Math.floor((delayPerCmd / 3) / 1000 * fps);
+    // 👈 FIX: 1 ثانیه delay مثل کد دومت
+    const preFrames = Math.floor((delayPerCmd / 3) / 1000);
     for(let i = 0; i < preFrames; i++) {
       await page.screenshot({ path: `frames/frame_${frameIndex.toString().padStart(4,'0')}.png` });
+      console.log(`📸 frame_${frameIndex.toString().padStart(4,'0')}.png`);
       frameIndex++;
-      await wait(100);
+      await wait(1000);  // 👈 1000ms نه 100ms!
     }
     
     await executeCommand(cmd);
     
-    const postFrames = Math.floor((delayPerCmd * 2 / 3) / 1000 * fps);
+    const postFrames = Math.floor((delayPerCmd * 2 / 3) / 1000);
     for(let i = 0; i < postFrames; i++) {
       await page.screenshot({ path: `frames/frame_${frameIndex.toString().padStart(4,'0')}.png` });
+      console.log(`📸 frame_${frameIndex.toString().padStart(4,'0')}.png`);
       frameIndex++;
-      await wait(100);
+      await wait(1000);  // 👈 1000ms نه 100ms!
     }
   }
   
   const output = 'video.mp4';
   try {
     execSync(`ffmpeg -y -r ${fps} -i frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 23 -preset fast ${output}`, { timeout: 45000 });
-    console.log(`✅ Video ${totalFrames} frames: ${fs.statSync(output).size / 1024 / 1024}MB`);
+    console.log(`✅ Video ${frameIndex} frames: ${fs.statSync(output).size / 1024 / 1024}MB`);
     fs.rmSync('frames', { recursive: true, force: true });
   } catch(e) {
     console.error("❌ FFmpeg:", e.message);
