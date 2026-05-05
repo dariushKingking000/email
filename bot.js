@@ -30,7 +30,7 @@ async function initBrowser() {
     window.chrome = { runtime: {} };
   });
   
-  await page.goto("https://chatgpt.com", { waitUntil: 'networkidle0', timeout: 60000 });
+  await page.goto("https://app.n8n.cloud/register", { waitUntil: 'networkidle0', timeout: 60000 });
   await wait(10000);
   await page.mouse.move(100, 100);
   console.log("✅ آماده!");
