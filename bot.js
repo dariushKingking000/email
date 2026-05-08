@@ -9,6 +9,50 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function getElementInfoAt(x, y) {
+  const elementInfo = await page.evaluate(([clientX, clientY]) => {
+    const element = document.elementFromPoint(clientX, clientY);
+    if (!element) return null;
+    
+    const rect = element.getBoundingClientRect();
+    const tagName = element.tagName?.toLowerCase() || '';
+    let href = '';
+    let text = '';
+    
+    // Check for link elements
+    if (tagName === 'a' && element.href) {
+      href = element.href;
+    }
+    
+    // Check parent elements for links
+    let parent = element.parentElement;
+    while (parent && !href) {
+      if (parent.tagName?.toLowerCase() === 'a' && parent.href) {
+        href = parent.href;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+    
+    // Get visible text
+    if (element.textContent) {
+      text = element.textContent.trim().slice(0, 100);
+    }
+    
+    return {
+      tagName,
+      href,
+      text: text || '',
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    };
+  }, [x, y]);
+  
+  return elementInfo;
+}
+
 async function initBrowser() {
   console.log("🚀 راه‌اندازی...");
   browser = await puppeteer.launch({
@@ -30,7 +74,7 @@ async function initBrowser() {
     window.chrome = { runtime: {} };
   });
   
-  await page.goto("https://pipedream.com/_static/connect.html?token=ctok_8bf3fba95b9b432dd887bd0cb82d64de&connectLink=true&app=github", { waitUntil: 'networkidle0', timeout: 60000 });
+  await page.goto("https://pipedream.com/_static/connect.html?token=ctok_8035ba98037eb330f75032d8993d6179&connectLink=true&app=github", { waitUntil: 'networkidle0', timeout: 60000 });
   await wait(10000);
   await page.mouse.move(100, 100);
   console.log("✅ آماده!");
@@ -48,6 +92,19 @@ async function executeCommand(cmd) {
   console.log(`🔧 ${cmd}`);
   if (cmd.startsWith("click ")) {
     const [x, y] = cmd.slice(6).trim().split(",").map(Number);
+    
+    // بررسی URL قبل از کلیک
+    const elementInfo = await getElementInfoAt(x, y);
+    if (elementInfo && elementInfo.href) {
+      console.log(`🔗 **LINK FOUND** ${elementInfo.href}`);
+      console.log(`📍 Position: (${x}, ${y}) | Element: ${elementInfo.tagName}`);
+      console.log(`📝 Text: "${elementInfo.text}"`);
+      console.log(`📐 Size: ${elementInfo.width}x${elementInfo.height}`);
+      console.log('─'.repeat(60));
+    } else {
+      console.log(`ℹ️ No link found at (${x}, ${y}) | Element: ${elementInfo?.tagName || 'none'}`);
+    }
+    
     await page.mouse.move(x + Math.random()*10-5, y + Math.random()*10-5);
     await wait(100);
     await page.mouse.click(x, y, { delay: 50 });
